@@ -16,6 +16,7 @@ export interface RoomState {
   code: string;
   name: string;
   mode: Mode;
+  turnSeconds: number;
   hostId: string;
   phase: Phase;
   players: Player[];

@@ -4,8 +4,9 @@ import { type ChatMessage, type Gesture, type Mode, type Player, type RoomState,
 export class GameRoom {
   state: Omit<RoomState, 'serverTime' | 'rpsSelected'>;
   choices: [Gesture | null, Gesture | null] = [null, null];
-  constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now()) {
-    this.state = { code, name, mode, hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, result: null, winningLine: [], chat: [] };
+  constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now(), turnSeconds = 30) {
+    if (!Number.isInteger(turnSeconds) || turnSeconds < 5 || turnSeconds > 300) throw new Error('제한 시간은 5~300초 사이의 정수로 설정해주세요.');
+    this.state = { code, name, mode, turnSeconds, hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, result: null, winningLine: [], chat: [] };
   }
   emptyBoard() { return Array.from({ length: 15 }, () => Array<number>(15).fill(0)); }
   view(): RoomState { return { ...this.state, serverTime: this.now(), rpsSelected: [this.choices[0] !== null, this.choices[1] !== null] }; }
@@ -67,7 +68,7 @@ export class GameRoom {
     const black: Team = !a ? 1 : !b ? 0 : (a === 'rock' && b === 'scissors') || (a === 'scissors' && b === 'paper') || (a === 'paper' && b === 'rock') ? 0 : 1;
     const labels = { rock: '바위', paper: '보', scissors: '가위' };
     this.message(`1팀 ${a ? labels[a] : '미선택'} / 2팀 ${b ? labels[b] : '미선택'} · ${black + 1}팀이 흑돌로 시작합니다.`);
-    this.state.blackTeam = black; this.state.phase = 'playing'; this.state.currentSeat = black; this.state.deadline = this.now() + 30000;
+    this.state.blackTeam = black; this.state.phase = 'playing'; this.state.currentSeat = black; this.state.deadline = this.now() + this.state.turnSeconds * 1000;
   }
   place(id: string, x: number, y: number) {
     this.tick();
@@ -82,7 +83,7 @@ export class GameRoom {
     if (line.length >= 5) { this.state.winningLine = line; this.finish(teamOf(p.seat), '다섯 개의 돌을 연결했습니다.'); return; }
     if (this.state.moves.length === 225) { this.finish(null, '바둑판이 가득 찼습니다. 무승부입니다.'); return; }
     const order = this.state.mode === '1v1' ? [this.state.blackTeam!, 1 - this.state.blackTeam!] : this.state.blackTeam === 0 ? [0, 1, 2, 3] : [1, 0, 3, 2];
-    this.state.currentSeat = order[(order.indexOf(p.seat) + 1) % order.length]; this.state.deadline = this.now() + 30000;
+    this.state.currentSeat = order[(order.indexOf(p.seat) + 1) % order.length]; this.state.deadline = this.now() + this.state.turnSeconds * 1000;
   }
   findLine(x: number, y: number, color: number): [number, number][] {
     for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
@@ -102,7 +103,7 @@ export class GameRoom {
   tick() {
     if (this.state.deadline === null || this.now() < this.state.deadline) return false;
     if (this.state.phase === 'rps') this.resolveRps();
-    else if (this.state.phase === 'playing') this.finish((1 - teamOf(this.state.currentSeat!)) as Team, '상대 팀의 30초 제한 시간이 초과되었습니다.');
+    else if (this.state.phase === 'playing') this.finish((1 - teamOf(this.state.currentSeat!)) as Team, `상대 팀의 ${this.state.turnSeconds}초 제한 시간이 초과되었습니다.`);
     return true;
   }
   resign(id: string) {

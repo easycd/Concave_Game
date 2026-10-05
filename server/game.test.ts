@@ -3,14 +3,26 @@ import assert from 'node:assert/strict';
 import { GameRoom } from './game.js';
 import { type Mode, type Team } from '../src/shared.js';
 
-function setup(mode: Mode = '1v1', black: Team = 0) {
+function setup(mode: Mode = '1v1', black: Team = 0, turnSeconds = 30) {
   let time = 1000;
-  const room = new GameRoom('ABC123', '테스트', mode, 'p0', () => time);
+  const room = new GameRoom('ABC123', '테스트', mode, 'p0', () => time, turnSeconds);
   for (let seat = 0; seat < (mode === '1v1' ? 2 : 4); seat++) { room.add(`p${seat}`, `참가자${seat}`); room.ready(`p${seat}`); }
   room.start('p0');
   room.choose('p0', black === 0 ? 'rock' : 'scissors'); room.choose('p1', black === 0 ? 'scissors' : 'rock');
   return { room, advance: (ms: number) => { time += ms; room.tick(); } };
 }
+
+test('custom turn duration applies to first and subsequent turns in both modes', () => {
+  for (const mode of ['1v1', '2v2'] as Mode[]) {
+    const { room, advance } = setup(mode, 0, 10);
+    advance(9000); assert.equal(room.state.phase, 'playing');
+    room.place('p0', 7, 7);
+    advance(9999); assert.equal(room.state.phase, 'playing');
+    advance(1); assert.equal(room.state.result?.winner, 0);
+    assert.match(room.state.result!.reason, /10초/);
+  }
+  for (const duration of [0, 301, 10.5, NaN]) assert.throws(() => setup('1v1', 0, duration));
+});
 
 test('1v1 enforces turns, occupied intersections, boundaries and 30s timeout', () => {
   const { room, advance } = setup();

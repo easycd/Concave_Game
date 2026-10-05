@@ -51,3 +51,10 @@
 @media(max-width:650px){.rps-result-banner{padding:12px 14px;top:8px;left:8px;right:8px}.rps-result-banner h2{font-size:20px}.rps-result-choices{gap:12px}.rps-result-choices span{font-size:18px}.ready-button{min-height:44px;font-size:12px}}
 
 .brand-home{text-decoration:none;cursor:pointer}
+
+/* Larger conversation area and readable text on every screen size. */
+.chat-heading{padding:18px 20px}.chat-heading h2{font-size:15px}.chat-heading>span{font-size:12px;padding:3px 7px}.chat-messages{padding:18px;scrollbar-color:#879b7d #e7edde}.chat-message{margin:18px 0}.chat-meta strong{font-size:13px;font-weight:700}.chat-meta time{font-size:11px;color:#66775d}.chat-bubble{font-size:16px;line-height:1.7;padding:12px 14px;color:#263c25;background:#e0e9d8}.mine .chat-bubble{background:#c8dfbd;color:#243e21}.system-message{font-size:12px;line-height:1.7;color:#52674a}.chat-input{margin:12px 16px 0;padding:5px;border:2px solid #91a583;border-radius:9px}.chat-input input{font-size:15px;padding:11px 8px}.chat-input button{background:#3b6939;color:#fff;border-radius:6px;min-width:40px;padding:10px}.chat-hint{font-size:11px;padding:11px 0 14px;color:#596d4f}
+@media(min-width:951px){.game-layout{grid-template-columns:minmax(280px,340px) minmax(0,var(--board-size)) minmax(200px,250px)}.chat-panel{height:min(calc(var(--board-size) + 185px),calc(100dvh - 190px))}}
+@media(min-width:951px) and (max-width:1150px){.game-layout{grid-template-columns:280px minmax(0,var(--board-size)) 200px;gap:16px}}
+@media(min-width:651px) and (max-width:950px){.game-layout{grid-template-columns:260px minmax(0,1fr)}.chat-panel{height:580px;min-height:460px}.chat-messages{padding:14px}.chat-heading{padding:16px 14px}.chat-input{margin-left:10px;margin-right:10px}}
+@media(max-width:650px){.chat-panel{height:420px;min-height:360px}.chat-heading h2{font-size:15px}.chat-bubble{font-size:16px}.chat-input input{font-size:16px}.chat-meta strong{font-size:13px}.system-message{font-size:12px}}

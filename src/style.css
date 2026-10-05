@@ -58,3 +58,9 @@
 @media(min-width:951px) and (max-width:1150px){.game-layout{grid-template-columns:280px minmax(0,var(--board-size)) 200px;gap:16px}}
 @media(min-width:651px) and (max-width:950px){.game-layout{grid-template-columns:260px minmax(0,1fr)}.chat-panel{height:580px;min-height:460px}.chat-messages{padding:14px}.chat-heading{padding:16px 14px}.chat-input{margin-left:10px;margin-right:10px}}
 @media(max-width:650px){.chat-panel{height:420px;min-height:360px}.chat-heading h2{font-size:15px}.chat-bubble{font-size:16px}.chat-input input{font-size:16px}.chat-meta strong{font-size:13px}.system-message{font-size:12px}}
+
+/* Pulse the final five seconds without moving the timer or board. */
+.timer-block.time-warning{border-radius:7px;outline:2px solid #d52d32;outline-offset:5px;animation:time-warning-pulse 1s ease-in-out infinite}
+.time-warning .timer,.time-warning .timer>span{color:#c71920;font-weight:700}.time-warning .timer>span{text-shadow:0 0 8px #ef45455c}.time-warning .time-track{background:#f0c6c6}.time-warning .time-track>div{background:#df2028}
+@keyframes time-warning-pulse{0%,100%{background:#ffe8e8;box-shadow:0 0 0 5px #ffe8e8,0 0 10px 8px #d52d3226}50%{background:#ffcaca;box-shadow:0 0 0 5px #ffcaca,0 0 16px 9px #d52d3255}}
+@media(prefers-reduced-motion:reduce){.timer-block.time-warning{animation:none;background:#ffe0e0;box-shadow:0 0 0 5px #ffe0e0}}

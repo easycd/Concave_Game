@@ -50,7 +50,7 @@ export function createGameServer() {
     const leave = () => {
       if (!session.room) return;
       const code = session.room; const room = rooms.get(code); session.room = null; socket.leave(code);
-      if (room) { room.remove(token); afterRemoval(room); }
+      if (room) { room.remove(token); if (room.state.phase === 'finished') socket.emit('room', room.view()); afterRemoval(room); }
       socket.emit('room', null); directory();
     };
     const action = (event: string, fn: (data: any) => Reply | void) => socket.on(event, (data: unknown, ack: unknown) => {

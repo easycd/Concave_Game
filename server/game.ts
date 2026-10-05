@@ -6,7 +6,7 @@ export class GameRoom {
   choices: [Gesture | null, Gesture | null] = [null, null];
   constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now(), turnSeconds = 30) {
     if (!Number.isInteger(turnSeconds) || turnSeconds < 5 || turnSeconds > 300) throw new Error('제한 시간은 5~300초 사이의 정수로 설정해주세요.');
-    this.state = { code, name, mode, turnSeconds, hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, result: null, winningLine: [], chat: [] };
+    this.state = { code, name, mode, turnSeconds, gameId: '', hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, result: null, winningLine: [], chat: [] };
   }
   emptyBoard() { return Array.from({ length: 15 }, () => Array<number>(15).fill(0)); }
   view(): RoomState { return { ...this.state, serverTime: this.now(), rpsSelected: [this.choices[0] !== null, this.choices[1] !== null] }; }
@@ -45,12 +45,13 @@ export class GameRoom {
     if (!seatsFor(this.state.mode).every(s => this.state.players.some(p => p.seat === s && p.ready && p.connected))) throw new Error('모든 플레이어가 자리에 앉아 준비해야 합니다.');
     this.state.board = this.emptyBoard(); this.state.moves = []; this.state.result = null; this.state.winningLine = [];
     this.state.blackTeam = null; this.state.currentSeat = null; this.state.rpsRound = 0;
+    this.state.gameId = randomUUID();
     this.newRound();
   }
   newRound() {
     this.state.phase = 'rps'; this.choices = [null, null]; this.state.rpsRound++;
-    this.state.deadline = this.now() + 3000;
-    this.message(`가위바위보 ${this.state.rpsRound}라운드! 각 팀의 첫 번째 플레이어는 3초 안에 선택해주세요.`);
+    this.state.deadline = this.now() + 10000;
+    this.message(`가위바위보 ${this.state.rpsRound}라운드! 각 팀의 첫 번째 플레이어는 10초 안에 선택해주세요.`);
   }
   choose(id: string, gesture: Gesture) {
     this.tick();

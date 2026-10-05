@@ -81,8 +81,8 @@ test('RPS hides selections, repeats ties, enforces captain and handles omissions
   room.choose('p0', 'paper'); assert.deepEqual(room.view().rpsSelected, [true, false]); assert.ok(!('choices' in room.view()));
   assert.throws(() => room.choose('p0', 'rock'));
   room.choose('p1', 'paper'); assert.equal(room.state.rpsRound, 2);
-  time = 3000; room.tick(); assert.equal(room.state.rpsRound, 3);
-  room.choose('p1', 'scissors'); time = 6000; room.tick();
+  time = 10000; room.tick(); assert.equal(room.state.rpsRound, 3);
+  room.choose('p1', 'scissors'); time = 20000; room.tick();
   assert.equal(room.state.blackTeam, 1); assert.equal(room.state.phase, 'playing');
   assert.throws(() => room.switchSeat('p2', null));
 });
@@ -91,4 +91,18 @@ test('late moves cannot evade timeout and resignation/leave award the other team
   const a = setup('2v2').room; a.resign('p2'); assert.equal(a.state.result?.winner, 1);
   const b = setup().room; b.remove('p0'); assert.equal(b.state.result?.winner, 1); assert.equal(b.state.hostId, 'p1');
   b.reset('p1'); assert.equal(b.state.phase, 'lobby'); assert.equal(b.state.moves.length, 0);
+});
+
+test('RPS allows ten seconds and resolves immediately when both captains choose', () => {
+  let time = 0;
+  const room = new GameRoom('ABC123', '방', '1v1', 'p0', () => time);
+  for (let i = 0; i < 2; i++) { room.add(`p${i}`, `사람${i}`); room.ready(`p${i}`); }
+  room.start('p0'); const firstGame = room.state.gameId;
+  assert.equal(room.state.deadline, 10000);
+  time = 9000; room.tick(); assert.equal(room.state.rpsRound, 1);
+  room.choose('p0', 'rock'); room.choose('p1', 'scissors');
+  assert.equal(room.state.phase, 'playing'); assert.equal(room.state.blackTeam, 0);
+  room.resign('p1'); room.reset('p0');
+  room.ready('p0'); room.ready('p1'); room.start('p0');
+  assert.notEqual(room.state.gameId, firstGame);
 });

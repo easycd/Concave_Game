@@ -27,6 +27,7 @@ export interface RoomState {
   currentSeat: number | null;
   deadline: number | null;
   rpsRound: number;
+  rpsRetryReason: 'tie' | 'missing' | null;
   rpsSelected: [boolean, boolean];
   rpsResult: { winner: Team; choices: [Gesture | null, Gesture | null] } | null;
   result: { winner: Team | null; reason: string } | null;

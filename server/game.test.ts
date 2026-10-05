@@ -82,9 +82,14 @@ test('RPS hides selections, repeats ties, enforces captain and handles omissions
   assert.equal(room.view().rpsResult, null);
   assert.throws(() => room.choose('p0', 'rock'));
   room.choose('p1', 'paper'); assert.equal(room.state.rpsRound, 2);
+  assert.equal(room.view().rpsRetryReason, 'tie');
+  assert.deepEqual(room.view().rpsSelected, [false, false]);
+  assert.equal(room.state.deadline, 10000);
   time = 10000; room.tick(); assert.equal(room.state.rpsRound, 3);
+  assert.equal(room.view().rpsRetryReason, 'missing');
   room.choose('p1', 'scissors'); time = 20000; room.tick();
   assert.equal(room.state.blackTeam, 1); assert.equal(room.state.phase, 'playing');
+  assert.equal(room.view().rpsRetryReason, null);
   assert.throws(() => room.switchSeat('p2', null));
 });
 test('late moves cannot evade timeout and resignation/leave award the other team', () => {

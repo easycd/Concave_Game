@@ -34,8 +34,8 @@
 /* Distinct player cards and reserved text rows prevent flex clipping. */
 .player-seat,.player-seat.active{margin:8px 0 0;padding:12px 10px;border:1px solid #8c9f80;border-radius:8px;background:#f7faf2;box-shadow:0 2px 5px #31412612;min-height:70px}
 .team-1 .player-seat{border-color:#b19975;background:#fff9ef}
-.player-seat.active{border:2px solid #40803b;background:#c5ddb7;padding:11px 9px;box-shadow:inset 4px 0 #3a7b39}
-.team-1 .player-seat.active{border-color:#987032;background:#dec49d;box-shadow:inset 4px 0 #987032}
+.player-seat.active{border:2px solid #40803b;background:#c5ddb7;padding:11px 9px;box-shadow:inset 8px 0 #34a853}
+.team-1 .player-seat.active{border-color:#987032;background:#dec49d;box-shadow:inset 8px 0 #34a853}
 .player-avatar{border:1px solid #80976f;background:#dbe7ce;color:#426136}.player-avatar.team-1{border-color:#ae8d5e;background:#eedbbd;color:#775628}.player-detail strong{line-height:1.5}.player-detail>span{line-height:1.5}
 .turn-announcement{height:104px;min-height:104px;padding:8px 12px;gap:3px;overflow:visible}
 .turn-announcement>span{flex:0 0 14px;line-height:14px}

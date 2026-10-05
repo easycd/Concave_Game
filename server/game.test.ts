@@ -79,6 +79,7 @@ test('RPS hides selections, repeats ties, enforces captain and handles omissions
   room.start('p0');
   assert.throws(() => room.choose('p2', 'rock'));
   room.choose('p0', 'paper'); assert.deepEqual(room.view().rpsSelected, [true, false]); assert.ok(!('choices' in room.view()));
+  assert.equal(room.view().rpsResult, null);
   assert.throws(() => room.choose('p0', 'rock'));
   room.choose('p1', 'paper'); assert.equal(room.state.rpsRound, 2);
   time = 10000; room.tick(); assert.equal(room.state.rpsRound, 3);
@@ -102,7 +103,9 @@ test('RPS allows ten seconds and resolves immediately when both captains choose'
   time = 9000; room.tick(); assert.equal(room.state.rpsRound, 1);
   room.choose('p0', 'rock'); room.choose('p1', 'scissors');
   assert.equal(room.state.phase, 'playing'); assert.equal(room.state.blackTeam, 0);
+  assert.deepEqual(room.view().rpsResult, { winner: 0, choices: ['rock', 'scissors'] });
   room.resign('p1'); room.reset('p0');
+  assert.equal(room.state.rpsResult, null);
   room.ready('p0'); room.ready('p1'); room.start('p0');
   assert.notEqual(room.state.gameId, firstGame);
 });

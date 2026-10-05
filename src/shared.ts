@@ -28,6 +28,7 @@ export interface RoomState {
   deadline: number | null;
   rpsRound: number;
   rpsSelected: [boolean, boolean];
+  rpsResult: { winner: Team; choices: [Gesture | null, Gesture | null] } | null;
   result: { winner: Team | null; reason: string } | null;
   winningLine: [number, number][];
   chat: ChatMessage[];

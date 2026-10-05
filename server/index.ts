@@ -57,7 +57,7 @@ export function createGameServer() {
       const reply = typeof ack === 'function' ? ack as (r: Reply) => void : () => {};
       try {
         if (session.socketId !== socket.id) throw new Error('다른 창에서 연결되었습니다.');
-        if (event !== 'chat') {
+        if (event !== 'chat' && event !== 'leave') {
           if (Date.now() - session.lastAction < 60) throw new Error('잠시 후 다시 시도해주세요.');
           session.lastAction = Date.now();
         }
@@ -112,8 +112,8 @@ export function createGameServer() {
   interval.unref();
   app.get('/api/health', (_req, res) => res.json({ ok: true, rooms: rooms.size }));
   const dist = path.resolve(process.cwd(), 'dist');
-  app.use(express.static(dist));
-  app.get('/{*path}', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+  app.use(express.static(dist, { setHeaders: (res, file) => { if (file.endsWith('index.html')) res.setHeader('Cache-Control', 'no-store'); } }));
+  app.get('/{*path}', (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.sendFile(path.join(dist, 'index.html')); });
   return { http, io, rooms, close: () => { clearInterval(interval); return new Promise<void>(resolve => io.close(() => resolve())); } };
 }
 

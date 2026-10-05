@@ -71,5 +71,10 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     await waitFor(() => views.get(4) === null);
     assert.equal(server.rooms.has(code), false);
     assert.equal((await send(players[7], 'join', { code })).ok, false);
+    const instantRoom = await send(players[7], 'create', { name: '즉시 홈 이동', mode: '1v1' });
+    assert.equal(instantRoom.ok, true);
+    const instantLeave = await new Promise<Reply>(resolve => players[7].emit('leave', {}, resolve));
+    assert.equal(instantLeave.ok, true);
+    assert.equal(server.rooms.has(instantRoom.code!), false);
   } finally { sockets.forEach(s => s.disconnect()); await server.close(); }
 });

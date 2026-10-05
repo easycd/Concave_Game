@@ -9,7 +9,7 @@ const invitedCode = new URLSearchParams(location.search).get('room')?.toUpperCas
 
 function Brand({ small = false, onHome }: { small?: boolean; onHome?: () => void }) {
   const content = <><span className="brand-mark"><i /><i /></span><span>오목<span className="brand-light"> 사이</span></span></>;
-  return onHome ? <button className={`brand brand-home ${small ? 'small' : ''}`} aria-label="오목 사이 메인 페이지로 이동" onClick={onHome}>{content}</button> : <div className={`brand ${small ? 'small' : ''}`}>{content}</div>;
+  return <a href="/" className={`brand brand-home ${small ? 'small' : ''}`} aria-label="오목 사이 메인 페이지로 이동" onClick={e => { if (onHome) { e.preventDefault(); onHome(); } }}>{content}</a>;
 }
 function Stone({ color, small = false }: { color: 'black' | 'white'; small?: boolean }) { return <span className={`stone ${color} ${small ? 'tiny' : ''}`} />; }
 
@@ -109,8 +109,12 @@ export default function App() {
   }
   function enter(e: FormEvent) { e.preventDefault(); if (!nickname.trim()) return; sessionStorage.setItem('gomoku-nickname', nickname.trim()); setNickname(nickname.trim()); setEntered(true); }
   async function goHome() {
-    if (room && !await send('leave')) return;
-    setRoom(null); setEntered(false); setConnected(false); setHistoryOpen(false); setCreating(false); setConfirm(null); setHover(null); setChat('');
+    const activeSocket = socket.current;
+    if (room && activeSocket?.connected) await new Promise<void>(resolve => {
+      activeSocket.timeout(1000).emit('leave', {}, () => resolve());
+    });
+    activeSocket?.disconnect();
+    setRoom(null); setEntered(false); setConnected(false); setPending(false); setHistoryOpen(false); setCreating(false); setConfirm(null); setHover(null); setChat('');
     window.history.replaceState(null, '', location.pathname);
     setJoinCode('');
   }
@@ -145,7 +149,7 @@ export default function App() {
   </div>;
 
   return <div className="app">
-    <header className="app-header"><Brand small onHome={() => room && ['playing', 'rps'].includes(room.phase) && me?.seat !== null ? setConfirm('home') : void goHome()} /><div className="header-right"><button className="history-button" onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? "게임으로" : `대국 기록 (${records.length})`}</button><span className={`connection ${connected ? '' : 'offline'}`}><span className="live-dot" />{connected ? '실시간 연결' : '재연결 중'}</span><span className="profile-avatar">{nickname.slice(0, 1)}</span><span className="profile-name">{nickname}</span></div></header>
+    <header className="app-header"><Brand small onHome={() => void goHome()} /><div className="header-right"><button className="history-button" onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? "게임으로" : `대국 기록 (${records.length})`}</button><span className={`connection ${connected ? '' : 'offline'}`}><span className="live-dot" />{connected ? '실시간 연결' : '재연결 중'}</span><span className="profile-avatar">{nickname.slice(0, 1)}</span><span className="profile-name">{nickname}</span></div></header>
     {!connected && <div className="connection-banner">연결을 다시 시도하고 있습니다. 20초 안에 재연결하면 기존 자리로 돌아옵니다. 대국 시간은 계속 흐릅니다.</div>}
     {historyOpen ? <HistoryPage records={records} onBack={() => setHistoryOpen(false)} /> : !room ? <main className="lobby-page">
       <div className="page-intro"><div><span className="eyebrow">THE LOBBY</span><h1>오늘은 누구와 둘까요?</h1><p>새로운 방을 만들거나, 친구의 방에 들어가세요.</p></div><button className="primary" onClick={() => setCreating(true)} disabled={!connected}><Plus size={18} /> 방 만들기</button></div>

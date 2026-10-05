@@ -1,4 +1,4 @@
-# 오목 사이
+# 오목
 
 TypeScript + React + Node.js + Socket.IO로 만든 실시간 온라인 오목 게임입니다.
 

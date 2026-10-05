@@ -12,7 +12,7 @@ test('compiled production server serves frontend and real WebSocket rooms', asyn
     const url = `http://127.0.0.1:${server.http.address().port}`;
     const health = await fetch(`${url}/api/health`);
     assert.equal(health.status, 200); assert.equal((await health.json()).ok, true);
-    const html = await (await fetch(url)).text(); assert.match(html, /오목 사이/);
+    const html = await (await fetch(url)).text(); assert.match(html, /오목/);
     const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^\"]+)"/g)].map(m => m[1]);
     assert.equal(assets.length, 2);
     for (const asset of [...assets, '/board.png']) assert.equal((await fetch(url + asset)).status, 200);

@@ -119,7 +119,7 @@ export function createGameServer() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const game = createGameServer(); const port = Number(process.env.PORT) || 3001;
-  game.http.listen(port, '0.0.0.0', () => console.log(`오목 사이 서버: http://localhost:${port}`));
+  game.http.listen(port, '0.0.0.0', () => console.log(`오목 서버: http://localhost:${port}`));
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return;

@@ -8,8 +8,8 @@ const gestures: { value: Gesture; label: string; symbol: string }[] = [{ value: 
 const invitedCode = new URLSearchParams(location.search).get('room')?.toUpperCase() ?? '';
 
 function Brand({ small = false, onHome }: { small?: boolean; onHome?: () => void }) {
-  const content = <><span className="brand-mark"><i /><i /></span><span>오목<span className="brand-light"> 사이</span></span></>;
-  return <a href="/" className={`brand brand-home ${small ? 'small' : ''}`} aria-label="오목 사이 메인 페이지로 이동" onClick={e => { if (onHome) { e.preventDefault(); onHome(); } }}>{content}</a>;
+  const content = <><span className="brand-mark"><i /><i /></span><span>오목</span></>;
+  return <a href="/" className={`brand brand-home ${small ? 'small' : ''}`} aria-label="오목 메인 페이지로 이동" onClick={e => { if (onHome) { e.preventDefault(); onHome(); } }}>{content}</a>;
 }
 function Stone({ color, small = false }: { color: 'black' | 'white'; small?: boolean }) { return <span className={`stone ${color} ${small ? 'tiny' : ''}`} />; }
 
@@ -145,7 +145,7 @@ export default function App() {
         <div className="welcome-features"><span><Users size={17} /> 1대1 & 2대2</span><span><MessageCircle size={17} /> 실시간 채팅</span><span><Eye size={17} /> 함께 관전</span></div>
       </section>
       <div className="welcome-art"><div className="art-caption"><span>LET’S PLAY, TOGETHER</span><span>01 — 15</span></div><div className="mini-board"><img src="/board.png" alt="첨부해주신 디자인의 15줄 오목판" />{[[7, 7, 'black'], [8, 7, 'white'], [6, 8, 'black'], [8, 6, 'white'], [5, 9, 'black']].map(([x, y, color], i) => <div className="art-stone" key={i} style={{ left: `${(77 + Number(x) * 48) / 822 * 100}%`, top: `${(77 + Number(y) * 48) / 822 * 100}%` }}><Stone color={color as 'black' | 'white'} /></div>)}</div><div className="art-note"><span className="live-dot" /> 작은 돌 하나, 새로운 대화 하나.</div></div>
-    </main><footer className="welcome-footer">오목 사이 <span>가볍게 만나, 즐겁게 한 판.</span></footer>
+    </main><footer className="welcome-footer">오목 <span>가볍게 만나, 즐겁게 한 판.</span></footer>
   </div>;
 
   return <div className="app">
@@ -177,7 +177,7 @@ export default function App() {
         </aside>
       </div>
     </main>}
-    <footer className="app-footer"><span>한 수, 그리고 우리 사이.</span><span>오목 사이 © 2026</span></footer>
+    <footer className="app-footer"><span>한 수, 그리고 우리 사이.</span><span>오목 © 2026</span></footer>
     {toast && <div className="toast" role="status">{toast}<button aria-label="알림 닫기" onClick={() => setToast('')}><X size={15} /></button></div>}
     {creating && <div className="modal-backdrop"><form className="modal" onSubmit={async e => { e.preventDefault(); if (await send('create', { name: roomName, mode, turnSeconds })) setCreating(false); }}><button className="modal-close" type="button" aria-label="닫기" onClick={() => setCreating(false)}><X size={20} /></button><span className="eyebrow">NEW ROOM</span><h2>우리의 대국을 시작해요</h2><label htmlFor="room-name">방 이름</label><input id="room-name" value={roomName} maxLength={30} onChange={e => setRoomName(e.target.value)} required autoFocus /><label>대국 방식</label><div className="mode-options">{(['1v1', '2v2'] as Mode[]).map(m => <button className={mode === m ? 'selected' : ''} type="button" key={m} onClick={() => setMode(m)}><Users size={22} /><strong>{m === '1v1' ? '1 대 1' : '2 대 2'}</strong><span>{m === '1v1' ? '마주 앉아 한 수씩' : '두 명이 한 팀으로'}</span></button>)}</div><label htmlFor="turn-seconds">돌 놓는 제한 시간 (초)</label><div className="time-options">{[10, 15, 30, 60, 120].map(t => <button type="button" key={t} className={turnSeconds === t ? "selected" : ""} onClick={() => setTurnSeconds(t)}>{t}초</button>)}</div><input id="turn-seconds" type="number" min={5} max={300} step={1} value={turnSeconds || ""} onChange={e => setTurnSeconds(Number(e.target.value))} required /><p className="quiet">5~300초 · 두 모드 모두 적용 · 시간 초과 시 팀 패배<br />관전자 3명 · 가위바위보는 10초 · 두 팀 선택 시 즉시 결과</p><button className="primary" disabled={!roomName.trim() || pending || !connected}>방 만들기 <ArrowRight size={17} /></button></form></div>}
     {confirm && <div className="modal-backdrop"><div className="modal confirm-modal"><h2>{confirm === 'resign' ? '기권하시겠어요?' : confirm === 'home' ? '메인 페이지로 돌아갈까요?' : '방을 나가시겠어요?'}</h2><p>대국 중 기권하거나 퇴장하면 우리 팀이 패배합니다.</p><div><button className="secondary" onClick={() => setConfirm(null)}>계속 플레이</button><button className="danger" disabled={pending} onClick={async () => { if (confirm === 'home') await goHome(); else if (await send(confirm)) setConfirm(null); }}>{confirm === 'resign' ? '기권하기' : confirm === 'home' ? '메인으로 이동' : '나가기'}</button></div></div></div>}

@@ -1,0 +1,10 @@
+node_modules
+.npm-cache
+dist
+build
+release
+screenshots
+.git
+.env
+.env.*
+*.log

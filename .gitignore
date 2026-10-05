@@ -1,0 +1,9 @@
+node_modules/
+.npm-cache/
+dist/
+build/
+release/
+screenshots/
+.env
+*.log
+test-results/

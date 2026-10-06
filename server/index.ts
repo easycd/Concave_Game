@@ -13,7 +13,7 @@ export function createGameServer() {
   const io = new Server(http, { maxHttpBufferSize: 16_384 });
   const rooms = new Map<string, GameRoom>();
   const sessions = new Map<string, { nickname: string; room: string | null; socketId: string | null; disconnectedAt: number | null; lastAction: number }>();
-  const summaries = (): RoomSummary[] => [...rooms.values()].map(({ state: s }) => ({ code: s.code, name: s.name, mode: s.mode, phase: s.phase, players: s.players.filter(p => p.seat !== null).length, spectators: s.players.filter(p => p.seat === null).length }));
+  const summaries = (): RoomSummary[] => [...rooms.values()].map(({ state: s }) => ({ code: s.code, name: s.name, mode: s.mode, rules: s.rules, phase: s.phase, players: s.players.filter(p => p.seat !== null).length, spectators: s.players.filter(p => p.seat === null).length }));
   const directory = () => io.emit('rooms', summaries());
   const broadcast = (room: GameRoom) => { io.to(room.state.code).emit('room', room.view()); directory(); };
   const afterRemoval = (room: GameRoom) => {
@@ -70,7 +70,7 @@ export function createGameServer() {
       if (!data || !['1v1', '2v2'].includes(data.mode)) throw new Error('게임 모드를 선택해주세요.');
       const name = cleanText(data.name, 30);
       let code: string; do { code = randomBytes(3).toString('hex').toUpperCase(); } while (rooms.has(code));
-      const room = new GameRoom(code, name, data.mode, token, () => Date.now(), data.turnSeconds ?? 30); room.add(token, session.nickname);
+      const room = new GameRoom(code, name, data.mode, token, () => Date.now(), data.turnSeconds ?? 30, data.rules ?? 'freestyle'); room.add(token, session.nickname);
       rooms.set(code, room); session.room = code; socket.join(code); broadcast(room); return { ok: true, code };
     });
     action('join', data => {

@@ -1,15 +1,25 @@
+import { renjuForbidden, renjuForbiddenMoves, type ForbiddenMove } from '../src/renju.js';
 import { randomUUID } from 'node:crypto';
 import { type ChatMessage, type Gesture, type Mode, type Player, type RoomState, type Team, seatsFor, teamOf } from '../src/shared.js';
 
 export class GameRoom {
-  state: Omit<RoomState, 'serverTime' | 'rpsSelected'>;
+  state: Omit<RoomState, 'serverTime' | 'rpsSelected' | 'forbiddenMoves'>;
   choices: [Gesture | null, Gesture | null] = [null, null];
-  constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now(), turnSeconds = 30) {
+  constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now(), turnSeconds = 30, rules: RoomState['rules'] = 'freestyle') {
+    if (!['freestyle', 'renju'].includes(rules)) throw new Error('올바른 오목 규칙을 선택해주세요.');
     if (!Number.isInteger(turnSeconds) || turnSeconds < 5 || turnSeconds > 300) throw new Error('제한 시간은 5~300초 사이의 정수로 설정해주세요.');
-    this.state = { code, name, mode, turnSeconds, gameId: '', hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, rpsRetryReason: null, rpsResult: null, result: null, winningLine: [], chat: [] };
+    this.state = { code, name, mode, rules, turnSeconds, gameId: '', hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, rpsRetryReason: null, rpsResult: null, result: null, winningLine: [], chat: [] };
   }
   emptyBoard() { return Array.from({ length: 15 }, () => Array<number>(15).fill(0)); }
-  view(): RoomState { return { ...this.state, serverTime: this.now(), rpsSelected: [this.choices[0] !== null, this.choices[1] !== null] }; }
+  private forbiddenCache = { board: '', moves: [] as ForbiddenMove[] };
+  view(): RoomState {
+    let forbiddenMoves: ForbiddenMove[] = [];
+    if (this.state.rules === 'renju' && this.state.phase === 'playing' && teamOf(this.state.currentSeat!) === this.state.blackTeam) {
+      const board = this.state.board.flat().join('');
+      if (board !== this.forbiddenCache.board) this.forbiddenCache = { board, moves: renjuForbiddenMoves(this.state.board) };
+      forbiddenMoves = this.forbiddenCache.moves;
+    }
+    return { ...this.state, forbiddenMoves, serverTime: this.now(), rpsSelected: [this.choices[0] !== null, this.choices[1] !== null] }; }
   player(id: string) { const p = this.state.players.find(p => p.id === id); if (!p) throw new Error('방에 참가한 뒤 이용해주세요.'); return p; }
   message(text: string, nickname = '안내', system = true) {
     const msg: ChatMessage = { id: randomUUID(), nickname, text, system, time: this.now() };
@@ -82,6 +92,10 @@ export class GameRoom {
     if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= 15 || y >= 15) throw new Error('바둑판 안에 돌을 놓아주세요.');
     if (this.state.board[y][x]) throw new Error('이미 돌이 놓인 자리입니다.');
     const color = teamOf(p.seat) === this.state.blackTeam ? 1 : 2;
+    if (color === 1 && this.state.rules === 'renju') {
+      const forbidden = renjuForbidden(this.state.board, x, y);
+      if (forbidden) throw new Error(`렌주 금수(${forbidden}) 자리에는 흑돌을 놓을 수 없습니다.`);
+    }
     this.state.board[y][x] = color; this.state.moves.push({ x, y, color, playerId: id });
     const line = this.findLine(x, y, color);
     if (line.length >= 5) { this.state.winningLine = line; this.finish(teamOf(p.seat), '다섯 개의 돌을 연결했습니다.'); return; }
@@ -96,7 +110,7 @@ export class GameRoom {
         let nx = x + dx * sign, ny = y + dy * sign;
         while (nx >= 0 && ny >= 0 && nx < 15 && ny < 15 && this.state.board[ny][nx] === color) { line.push([nx, ny]); nx += dx * sign; ny += dy * sign; }
       }
-      if (line.length >= 5) return line;
+      if (line.length >= 5 && (this.state.rules !== 'renju' || color === 2 || line.length === 5)) return line;
     }
     return [];
   }

@@ -1,4 +1,5 @@
 export type Mode = '1v1' | '2v2';
+export type RuleSet = 'freestyle' | 'renju';
 export type Team = 0 | 1;
 export type Gesture = 'rock' | 'paper' | 'scissors';
 export type Phase = 'lobby' | 'rps' | 'playing' | 'finished';
@@ -11,11 +12,13 @@ export interface Player {
 }
 export interface Move { x: number; y: number; color: 1 | 2; playerId: string }
 export interface ChatMessage { id: string; nickname: string; text: string; system: boolean; time: number }
-export interface RoomSummary { code: string; name: string; mode: Mode; phase: Phase; players: number; spectators: number }
+export interface RoomSummary { code: string; name: string; mode: Mode; rules: RuleSet; phase: Phase; players: number; spectators: number }
 export interface RoomState {
   code: string;
   name: string;
   mode: Mode;
+  rules: RuleSet;
+  forbiddenMoves: import('./renju.js').ForbiddenMove[];
   turnSeconds: number;
   gameId: string;
   hostId: string;

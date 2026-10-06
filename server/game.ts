@@ -54,9 +54,18 @@ export class GameRoom {
     if (this.state.phase !== 'lobby') throw new Error('이미 게임이 진행 중입니다.');
     if (!seatsFor(this.state.mode).every(s => this.state.players.some(p => p.seat === s && p.ready && p.connected))) throw new Error('모든 플레이어가 자리에 앉아 준비해야 합니다.');
     this.state.board = this.emptyBoard(); this.state.moves = []; this.state.result = null; this.state.winningLine = [];
-    this.state.blackTeam = null; this.state.currentSeat = null; this.state.rpsRound = 0;
+    this.state.currentSeat = null; this.state.rpsRound = 0;
+    this.choices = [null, null]; this.state.rpsResult = null; this.state.rpsRetryReason = null;
     this.state.gameId = randomUUID();
-    this.newRound();
+    if (this.state.blackTeam === null) this.newRound();
+    else {
+      this.message(`흑백을 바꿔 새 대국을 시작합니다. ${this.state.blackTeam + 1}팀이 흑돌로 선공합니다. 가위바위보는 생략합니다.`);
+      this.beginPlay(this.state.blackTeam);
+    }
+  }
+  private beginPlay(black: Team) {
+    this.state.blackTeam = black; this.state.phase = 'playing'; this.state.currentSeat = black;
+    this.state.deadline = this.now() + this.state.turnSeconds * 1000;
   }
   newRound(reason: RoomState['rpsRetryReason'] = null) {
     this.state.rpsRetryReason = reason;
@@ -82,7 +91,7 @@ export class GameRoom {
     this.message(`1팀 ${a ? labels[a] : '미선택'} / 2팀 ${b ? labels[b] : '미선택'} · ${black + 1}팀이 흑돌로 시작합니다.`);
     this.state.rpsRetryReason = null;
     this.state.rpsResult = { winner: black, choices: [a, b] };
-    this.state.blackTeam = black; this.state.phase = 'playing'; this.state.currentSeat = black; this.state.deadline = this.now() + this.state.turnSeconds * 1000;
+    this.beginPlay(black);
   }
   place(id: string, x: number, y: number) {
     this.tick();
@@ -141,7 +150,10 @@ export class GameRoom {
   reset(id: string) {
     if (id !== this.state.hostId || this.state.phase !== 'finished') throw new Error('대국이 끝난 후 방장이 다시 시작할 수 있습니다.');
     this.state.phase = 'lobby'; this.state.players.forEach(p => p.ready = false);
-    this.choices = [null, null]; this.state.rpsRetryReason = null; this.state.rpsResult = null; this.state.blackTeam = null; this.state.board = this.emptyBoard(); this.state.moves = []; this.state.result = null; this.state.winningLine = [];
-    this.message('새로운 대국을 준비합니다. 자리를 선택하고 준비해주세요.');
+    this.choices = [null, null]; this.state.rpsRetryReason = null; this.state.rpsResult = null;
+    if (this.state.blackTeam !== null) this.state.blackTeam = (1 - this.state.blackTeam) as Team;
+    this.state.currentSeat = null; this.state.deadline = null;
+    this.state.board = this.emptyBoard(); this.state.moves = []; this.state.result = null; this.state.winningLine = [];
+    this.message(this.state.blackTeam === null ? '새로운 대국을 준비합니다. 자리를 선택하고 준비해주세요.' : `다음 대국은 ${this.state.blackTeam + 1}팀 흑돌, ${2 - this.state.blackTeam}팀 백돌입니다. 모두 준비하면 가위바위보 없이 시작합니다.`);
   }
 }

@@ -114,3 +114,42 @@ test('RPS allows ten seconds and resolves immediately when both captains choose'
   room.ready('p0'); room.ready('p1'); room.start('p0');
   assert.notEqual(room.state.gameId, firstGame);
 });
+
+test('rematches swap colors without RPS and alternate every round in both modes', () => {
+  for (const mode of ['1v1', '2v2'] as Mode[]) for (const initialBlack of [0, 1] as Team[]) {
+    const { room } = setup(mode, initialBlack, 60);
+    let previousGame = room.state.gameId;
+    for (let match = 1; match <= 3; match++) {
+      room.resign('p0'); room.reset('p0');
+      const black = (match % 2 ? 1 - initialBlack : initialBlack) as Team;
+      assert.equal(room.state.blackTeam, black);
+      assert.equal(room.state.phase, 'lobby'); assert.equal(room.state.deadline, null);
+      assert.throws(() => room.start('p0'), /준비/);
+      for (const p of room.state.players) room.ready(p.id);
+      room.start('p0');
+      assert.notEqual(room.state.gameId, previousGame); previousGame = room.state.gameId;
+      assert.equal(room.state.phase, 'playing'); assert.equal(room.state.rpsRound, 0);
+      assert.equal(room.state.rpsResult, null); assert.deepEqual(room.view().rpsSelected, [false, false]);
+      assert.equal(room.state.currentSeat, black); assert.equal(room.state.deadline, 61000);
+      assert.equal(room.state.moves.length, 0); assert.ok(room.state.board.flat().every(v => v === 0));
+      assert.throws(() => room.choose('p0', 'rock'), /선택 시간/);
+      const order = mode === '1v1' ? [black, 1 - black] : black === 0 ? [0, 1, 2, 3] : [1, 0, 3, 2];
+      order.forEach((seat, x) => {
+        assert.equal(room.state.currentSeat, seat); room.place(`p${seat}`, x, 7);
+        assert.equal(room.state.board[7][x], x % 2 === 0 ? 1 : 2);
+      });
+    }
+  }
+});
+
+test('draws swap colors but games ending before colors are chosen still use RPS', () => {
+  const room = setup().room;
+  room.finish(null, '무승부'); room.reset('p0');
+  room.ready('p0'); room.ready('p1'); room.start('p0');
+  assert.equal(room.state.phase, 'playing'); assert.equal(room.state.blackTeam, 1);
+  const first = new GameRoom('FIRST', '첫 판', '1v1', 'p0');
+  for (let i = 0; i < 2; i++) { first.add(`p${i}`, `사람${i}`); first.ready(`p${i}`); }
+  first.start('p0'); first.resign('p1'); first.reset('p0');
+  first.ready('p0'); first.ready('p1'); first.start('p0');
+  assert.equal(first.state.phase, 'rps'); assert.equal(first.state.blackTeam, null);
+});

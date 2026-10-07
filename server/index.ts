@@ -1,16 +1,19 @@
 import express from 'express';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { Server } from 'socket.io';
 import { GameRoom } from './game.js';
 import { type Reply, type RoomSummary } from '../src/shared.js';
 
+const { createNightfall, handleNightfallRequest } = await import(pathToFileURL(path.resolve(process.cwd(), 'nightfall/server.js')).href);
+
 export function createGameServer() {
   const app = express();
   const http = createServer(app);
   const io = new Server(http, { maxHttpBufferSize: 16_384 });
+  const nightfall = createNightfall(io);
   const rooms = new Map<string, GameRoom>();
   const sessions = new Map<string, { nickname: string; room: string | null; socketId: string | null; disconnectedAt: number | null; lastAction: number }>();
   const summaries = (): RoomSummary[] => [...rooms.values()].map(({ state: s }) => ({ code: s.code, name: s.name, mode: s.mode, rules: s.rules, phase: s.phase, players: s.players.filter(p => p.seat !== null).length, spectators: s.players.filter(p => p.seat === null).length }));
@@ -110,11 +113,14 @@ export function createGameServer() {
     }
   }, 100);
   interval.unref();
+  app.use((req, res, next) => {
+    void handleNightfallRequest(req, res).then((handled: boolean) => { if (!handled) next(); }).catch(next);
+  });
   app.get('/api/health', (_req, res) => res.json({ ok: true, rooms: rooms.size }));
   const dist = path.resolve(process.cwd(), 'dist');
   app.use(express.static(dist, { setHeaders: (res, file) => { if (file.endsWith('index.html')) res.setHeader('Cache-Control', 'no-store'); } }));
   app.get('/{*path}', (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.sendFile(path.join(dist, 'index.html')); });
-  return { http, io, rooms, close: () => { clearInterval(interval); return new Promise<void>(resolve => io.close(() => resolve())); } };
+  return { http, io, rooms, close: () => { clearInterval(interval); nightfall.close(); return new Promise<void>(resolve => io.close(() => resolve())); } };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -14,14 +14,14 @@ function setup(mode: Mode = '1v1', black: Team = 0, turnSeconds = 30) {
 
 test('custom turn duration applies to first and subsequent turns in both modes', () => {
   for (const mode of ['1v1', '2v2'] as Mode[]) {
-    const { room, advance } = setup(mode, 0, 10);
-    advance(9000); assert.equal(room.state.phase, 'playing');
+    const { room, advance } = setup(mode, 0, 2);
+    advance(1999); assert.equal(room.state.phase, 'playing');
     room.place('p0', 7, 7);
-    advance(9999); assert.equal(room.state.phase, 'playing');
+    advance(1999); assert.equal(room.state.phase, 'playing');
     advance(1); assert.equal(room.state.result?.winner, 0);
-    assert.match(room.state.result!.reason, /10초/);
+    assert.match(room.state.result!.reason, /2초/);
   }
-  for (const duration of [0, 301, 10.5, NaN]) assert.throws(() => setup('1v1', 0, duration));
+  for (const duration of [0, 1, 301, 2.5, NaN]) assert.throws(() => setup('1v1', 0, duration));
 });
 
 test('1v1 enforces turns, occupied intersections, boundaries and 30s timeout', () => {

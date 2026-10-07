@@ -7,7 +7,7 @@ export class GameRoom {
   choices: [Gesture | null, Gesture | null] = [null, null];
   constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now(), turnSeconds = 30, rules: RoomState['rules'] = 'freestyle') {
     if (!['freestyle', 'renju'].includes(rules)) throw new Error('올바른 오목 규칙을 선택해주세요.');
-    if (!Number.isInteger(turnSeconds) || turnSeconds < 5 || turnSeconds > 300) throw new Error('제한 시간은 5~300초 사이의 정수로 설정해주세요.');
+    if (!Number.isInteger(turnSeconds) || turnSeconds < 2 || turnSeconds > 300) throw new Error('제한 시간은 2~300초 사이의 정수로 설정해주세요.');
     this.state = { code, name, mode, rules, turnSeconds, gameId: '', hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, rpsRetryReason: null, rpsResult: null, result: null, winningLine: [], chat: [] };
   }
   emptyBoard() { return Array.from({ length: 15 }, () => Array<number>(15).fill(0)); }

@@ -21,6 +21,9 @@ export interface RoomState {
   forbiddenMoves: import('./renju.js').ForbiddenMove[];
   turnSeconds: number;
   gameId: string;
+  startedAt: number | null;
+  finishedAt: number | null;
+  drawOffer: { team: Team; nickname: string; expiresAt: number } | null;
   hostId: string;
   phase: Phase;
   players: Player[];

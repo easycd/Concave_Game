@@ -85,3 +85,14 @@
 
 /* Only Renju rooms carry an explicit, high-contrast rule notice. */
 .room-tags{display:flex;align-items:center;flex-wrap:wrap;gap:7px}.renju-badge{display:inline-flex;align-items:center;gap:5px;background:#294b3d;color:#fff0be;border:1px solid #b99b49;border-radius:6px;padding:6px 9px;font-size:13px;font-weight:800;letter-spacing:0;white-space:nowrap}.room-heading h1{flex-wrap:wrap;gap:8px}.renju-rule-panel{margin-top:16px;padding:15px 13px;background:#294b3d;border:2px solid #b99b49;border-radius:10px;box-shadow:0 3px 8px #203b2520}.renju-rule-panel strong{display:flex;align-items:center;gap:7px;font-size:17px;color:#fff0be}.renju-rule-panel p{margin-top:9px;font-size:12px;line-height:1.8;color:#fff}.renju-footer-rule{font-size:12px!important;font-weight:800;color:#294b3d!important;background:#e7eddb;padding:4px 7px;border-radius:5px}.board-footer{flex-wrap:wrap;gap:6px}@media(max-width:650px){.renju-badge{font-size:11px;padding:5px 7px}.renju-rule-panel{margin-top:0}.renju-rule-panel strong{font-size:16px}}
+/* Urgent board warning uses only paint properties to keep intersections fixed. */
+.board-wrap.board-time-warning{outline:4px solid #e43434;outline-offset:3px;animation:board-danger-pulse .7s ease-in-out infinite}
+@keyframes board-danger-pulse{0%,100%{box-shadow:0 0 8px 3px #ef303070}50%{box-shadow:0 0 24px 7px #ef3030b0}}
+.match-clock{display:flex;flex-direction:column;align-items:center;background:#294b3d;border:1px solid #59745b;border-radius:8px;padding:7px 14px;color:white}
+.match-clock span{font-size:11px;color:#e6ecd5;font-weight:700}.match-clock strong{font-size:22px;line-height:1.3;font-variant-numeric:tabular-nums;letter-spacing:1px}
+.room-share{flex-wrap:wrap}.match-actions{display:flex;flex-direction:column;gap:10px;margin-top:18px}.match-actions .resign-button{margin:0}
+.rematch-button,.draw-button{width:100%;min-height:44px;border:2px solid #294b3d;border-radius:7px;font-size:13px;font-weight:800;background:#294b3d;color:#fff;box-shadow:0 3px 0 #203b2e}
+.draw-button{background:#e5ecdf;color:#294b3d;box-shadow:none}.match-actions button:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+.draw-offer{margin-top:16px;padding:15px;border:2px solid #bc8f34;background:#fff4d4;color:#483a1a;border-radius:10px}.draw-offer strong{font-size:17px}.draw-offer p{font-size:12px;margin:8px 0}.draw-offer b{font-size:19px;color:#9a3c22}.draw-offer>div{display:flex;gap:8px;margin:12px 0}.draw-offer button{flex:1;min-height:40px;background:#294b3d;color:white;border-radius:6px;font-weight:800}.draw-offer button+button{background:#8c4238}.draw-offer small{display:block;font-size:11px;margin-top:10px}
+@media(prefers-reduced-motion:reduce){.board-wrap.board-time-warning{animation:none;box-shadow:0 0 16px 5px #ef303090}}
+@media(max-width:650px){.match-clock{padding:5px 10px}.match-clock strong{font-size:19px}.match-actions{margin-top:0}.draw-offer{margin-top:0}}

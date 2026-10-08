@@ -3,6 +3,43 @@ import assert from 'node:assert/strict';
 import { GameRoom } from './game.js';
 import { type Mode, type Team } from '../src/shared.js';
 
+test('draw offers require an opponent, expire after ten seconds and do not pause turns', () => {
+  for (const mode of ['1v1', '2v2'] as Mode[]) {
+    const { room, advance } = setup(mode, 0, 60);
+    room.add('watch', '관전자', true);
+    const deadline = room.state.deadline;
+    assert.throws(() => room.offerDraw('watch'));
+    room.offerDraw('p0');
+    assert.equal(room.state.deadline, deadline);
+    assert.throws(() => room.offerDraw('p1'));
+    assert.throws(() => room.answerDraw('p0', true));
+    assert.throws(() => room.answerDraw('watch', true));
+    advance(9999); room.answerDraw(mode === '2v2' ? 'p3' : 'p1', true);
+    assert.equal(room.state.phase, 'finished'); assert.equal(room.state.result?.winner, null);
+    assert.equal(room.state.drawOffer, null); assert.equal(room.state.finishedAt, 10999);
+    room.requestRematch('p1'); assert.equal(room.state.phase, 'lobby');
+    assert.equal(room.state.startedAt, null); assert.equal(room.state.finishedAt, null);
+  }
+  const { room, advance } = setup('1v1', 0, 60);
+  room.offerDraw('p0'); advance(10000);
+  assert.equal(room.state.phase, 'playing'); assert.equal(room.state.drawOffer, null);
+  assert.throws(() => room.answerDraw('p1', true));
+  room.offerDraw('p1'); room.answerDraw('p0', false); assert.equal(room.state.drawOffer, null);
+  const short = setup('1v1', 0, 2); short.room.offerDraw('p0'); short.advance(2000);
+  assert.equal(short.room.state.result?.winner, 1); assert.equal(short.room.state.drawOffer, null);
+});
+
+test('spectators can join vacant seats after a match and non-host players can request rematches', () => {
+  const { room } = setup(); room.add('watch', '관전자', true);
+  assert.throws(() => room.switchSeat('watch', 1));
+  room.resign('p1'); room.switchSeat('p1', null); room.switchSeat('watch', 1);
+  assert.equal(room.player('watch').seat, 1);
+  assert.throws(() => room.requestRematch('p1'));
+  room.requestRematch('watch'); assert.equal(room.state.phase, 'lobby');
+  assert.equal(room.state.blackTeam, 1);
+  assert.throws(() => room.requestRematch('watch'));
+});
+
 function setup(mode: Mode = '1v1', black: Team = 0, turnSeconds = 30) {
   let time = 1000;
   const room = new GameRoom('ABC123', '테스트', mode, 'p0', () => time, turnSeconds);

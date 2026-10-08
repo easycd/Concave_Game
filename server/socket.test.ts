@@ -67,6 +67,9 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     assert.equal((await send(reconnected, 'leave')).ok, true);
     await waitFor(() => views.get(0)?.phase === 'finished');
     assert.equal(views.get(0)?.result?.winner, 1);
+    assert.equal((await send(players[4], 'seat', { seat: 2 })).ok, true);
+    await waitFor(() => views.get(6)?.players.find(p => p.id === tokens[4])?.seat === 2);
+    assert.equal((await send(players[4], 'seat', { seat: null })).ok, true);
     assert.equal((await send(players[0], 'reset')).ok, true);
     assert.equal((await send(reconnected, 'join', { code })).ok, true);
     for (const s of [players[0], players[1], reconnected, players[3]]) assert.equal((await send(s, 'ready')).ok, true);
@@ -76,6 +79,13 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     assert.equal(views.get(6)?.rpsResult, null); assert.equal(views.get(6)?.moves.length, 0);
     assert.equal((await send(players[1], 'move', { x: 7, y: 7 })).ok, true);
     await waitFor(() => views.get(6)?.board[7][7] === 1);
+    assert.equal((await send(players[0], 'drawOffer')).ok, true);
+    await waitFor(() => views.get(6)?.drawOffer?.team === 0);
+    assert.equal((await send(players[3], 'drawAnswer', { accept: true })).ok, true);
+    await waitFor(() => views.get(6)?.phase === 'finished');
+    assert.equal(views.get(6)?.result?.winner, null);
+    assert.equal((await send(players[1], 'rematch')).ok, true);
+    await waitFor(() => views.get(6)?.phase === 'lobby');
     assert.equal((await send(reconnected, 'leave')).ok, true);
     for (const i of [0, 1, 3]) assert.equal((await send(players[i], 'leave')).ok, true);
     await waitFor(() => views.get(4) === null);

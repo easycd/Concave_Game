@@ -8,7 +8,7 @@ export class GameRoom {
   constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now(), turnSeconds = 30, rules: RoomState['rules'] = 'freestyle') {
     if (!['freestyle', 'renju'].includes(rules)) throw new Error('올바른 오목 규칙을 선택해주세요.');
     if (!Number.isInteger(turnSeconds) || turnSeconds < 2 || turnSeconds > 300) throw new Error('제한 시간은 2~300초 사이의 정수로 설정해주세요.');
-    this.state = { code, name, mode, rules, turnSeconds, gameId: '', hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, rpsRetryReason: null, rpsResult: null, result: null, winningLine: [], chat: [] };
+    this.state = { code, name, mode, rules, turnSeconds, gameId: '', startedAt: null, finishedAt: null, drawOffer: null, hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, rpsRetryReason: null, rpsResult: null, result: null, winningLine: [], chat: [] };
   }
   emptyBoard() { return Array.from({ length: 15 }, () => Array<number>(15).fill(0)); }
   private forbiddenCache = { board: '', moves: [] as ForbiddenMove[] };
@@ -34,7 +34,7 @@ export class GameRoom {
     this.message(`${nickname}님이 입장했습니다.`);
   }
   switchSeat(id: string, seat: number | null) {
-    if (this.state.phase !== 'lobby') throw new Error('자리 이동은 대기 중에만 가능합니다.');
+    if (!['lobby', 'finished'].includes(this.state.phase)) throw new Error('자리 이동은 대기 중이거나 대국 종료 후에 가능합니다.');
     const p = this.player(id);
     if (seat !== null && (!Number.isInteger(seat) || !seatsFor(this.state.mode).includes(seat))) throw new Error('올바른 자리를 선택해주세요.');
     if (seat === p.seat) return;
@@ -57,6 +57,7 @@ export class GameRoom {
     this.state.currentSeat = null; this.state.rpsRound = 0;
     this.choices = [null, null]; this.state.rpsResult = null; this.state.rpsRetryReason = null;
     this.state.gameId = randomUUID();
+    this.state.startedAt = null; this.state.finishedAt = null; this.state.drawOffer = null;
     if (this.state.blackTeam === null) this.newRound();
     else {
       this.message(`흑백을 바꿔 새 대국을 시작합니다. ${this.state.blackTeam + 1}팀이 흑돌로 선공합니다. 가위바위보는 생략합니다.`);
@@ -64,6 +65,7 @@ export class GameRoom {
     }
   }
   private beginPlay(black: Team) {
+    this.state.startedAt = this.now();
     this.state.blackTeam = black; this.state.phase = 'playing'; this.state.currentSeat = black;
     this.state.deadline = this.now() + this.state.turnSeconds * 1000;
   }
@@ -124,14 +126,38 @@ export class GameRoom {
     return [];
   }
   finish(winner: Team | null, reason: string) {
+    this.state.finishedAt = this.now(); this.state.drawOffer = null;
     this.state.phase = 'finished'; this.state.result = { winner, reason }; this.state.deadline = null; this.state.currentSeat = null;
     this.message(`${winner === null ? '무승부' : `${winner + 1}팀 승리`} · ${reason}`);
   }
   tick() {
-    if (this.state.deadline === null || this.now() < this.state.deadline) return false;
+    let changed = false;
+    if (this.state.drawOffer && this.now() >= this.state.drawOffer.expiresAt) {
+      this.state.drawOffer = null; this.message('무승부 신청이 10초 동안 수락되지 않아 취소되었습니다.'); changed = true;
+    }
+    if (this.state.deadline === null || this.now() < this.state.deadline) return changed;
     if (this.state.phase === 'rps') this.resolveRps();
     else if (this.state.phase === 'playing') this.finish((1 - teamOf(this.state.currentSeat!)) as Team, `상대 팀의 ${this.state.turnSeconds}초 제한 시간이 초과되었습니다.`);
     return true;
+  }
+  offerDraw(id: string) {
+    this.tick(); const p = this.player(id);
+    if (this.state.phase !== 'playing' || p.seat === null) throw new Error('대국 중인 플레이어만 무승부를 신청할 수 있습니다.');
+    if (this.state.drawOffer) throw new Error('이미 무승부 신청이 진행 중입니다.');
+    this.state.drawOffer = { team: teamOf(p.seat), nickname: p.nickname, expiresAt: this.now() + 10000 };
+    this.message(`${p.nickname}님이 무승부를 신청했습니다. 상대 팀은 10초 안에 수락해주세요. 착수 시간은 계속 흐릅니다.`);
+  }
+  answerDraw(id: string, accept: boolean) {
+    this.tick(); const p = this.player(id); const offer = this.state.drawOffer;
+    if (this.state.phase !== 'playing' || !offer) throw new Error('유효한 무승부 신청이 없습니다.');
+    if (p.seat === null || teamOf(p.seat) === offer.team) throw new Error('상대 팀 플레이어만 응답할 수 있습니다.');
+    if (typeof accept !== 'boolean') throw new Error('수락 여부를 선택해주세요.');
+    if (accept) this.finish(null, `${offer.nickname}님의 무승부 신청을 ${p.nickname}님이 수락했습니다.`);
+    else { this.state.drawOffer = null; this.message(`${p.nickname}님이 무승부 신청을 거절했습니다.`); }
+  }
+  requestRematch(id: string) {
+    if (this.player(id).seat === null) throw new Error('플레이어만 한 판 더 신청할 수 있습니다.');
+    this.reset(this.state.hostId);
   }
   resign(id: string) {
     this.tick();
@@ -153,6 +179,7 @@ export class GameRoom {
     this.choices = [null, null]; this.state.rpsRetryReason = null; this.state.rpsResult = null;
     if (this.state.blackTeam !== null) this.state.blackTeam = (1 - this.state.blackTeam) as Team;
     this.state.currentSeat = null; this.state.deadline = null;
+    this.state.startedAt = null; this.state.finishedAt = null; this.state.drawOffer = null;
     this.state.board = this.emptyBoard(); this.state.moves = []; this.state.result = null; this.state.winningLine = [];
     this.message(this.state.blackTeam === null ? '새로운 대국을 준비합니다. 자리를 선택하고 준비해주세요.' : `다음 대국은 ${this.state.blackTeam + 1}팀 흑돌, ${2 - this.state.blackTeam}팀 백돌입니다. 모두 준비하면 가위바위보 없이 시작합니다.`);
   }

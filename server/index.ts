@@ -90,6 +90,9 @@ export function createGameServer() {
     action('move', data => { const room = active(); room.place(token, data?.x, data?.y); broadcast(room); });
     action('resign', () => { const room = active(); room.resign(token); broadcast(room); });
     action('reset', () => { const room = active(); room.reset(token); broadcast(room); });
+    action('rematch', () => { const room = active(); room.requestRematch(token); broadcast(room); });
+    action('drawOffer', () => { const room = active(); room.offerDraw(token); broadcast(room); });
+    action('drawAnswer', data => { const room = active(); room.answerDraw(token, data?.accept); broadcast(room); });
     action('chat', data => {
       const room = active();
       const msg = cleanText(data?.text, 200); room.message(msg, session.nickname, false);

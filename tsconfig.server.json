@@ -10,6 +10,6 @@
     "rootDir": ".",
     "sourceMap": true
   },
-  "include": ["server/index.ts", "server/game.ts", "src/shared.ts"],
+  "include": ["server/*.ts", "src/shared.ts", "src/renju.ts"],
   "exclude": ["server/*.test.ts"]
 }

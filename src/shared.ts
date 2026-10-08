@@ -13,6 +13,8 @@ export interface Player {
 export interface Move { x: number; y: number; color: 1 | 2; playerId: string }
 export interface ChatMessage { id: string; nickname: string; text: string; system: boolean; time: number }
 export interface RoomSummary { code: string; name: string; mode: Mode; rules: RuleSet; phase: Phase; players: number; spectators: number }
+export interface AccountStats { id: string; nickname: string; wins: number; losses: number; draws: number; games: number; winRate: number }
+export interface AuthReply { ok: boolean; account?: AccountStats; error?: string }
 export interface RoomState {
   code: string;
   name: string;

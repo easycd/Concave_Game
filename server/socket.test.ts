@@ -6,7 +6,8 @@ import { createGameServer } from './index.js';
 import { type Reply, type RoomState } from '../src/shared.js';
 
 test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async () => {
-  const server = createGameServer();
+  const server = createGameServer({ allowLegacyAuth: true });
+  await server.ready;
   await new Promise<void>(resolve => server.http.listen(0, '127.0.0.1', resolve));
   const address = server.http.address(); assert.ok(address && typeof address !== 'string');
   const url = `http://127.0.0.1:${address.port}`;

@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { io } from 'socket.io-client';
 import { createGameServer } from '../build/server/index.js';
 
@@ -8,6 +7,7 @@ test('compiled production server serves frontend and real WebSocket rooms', asyn
   const server = createGameServer();
   const clients = [];
   try {
+    await server.ready;
     await new Promise(resolve => server.http.listen(0, '127.0.0.1', resolve));
     const url = `http://127.0.0.1:${server.http.address().port}`;
     const health = await fetch(`${url}/api/health`);
@@ -18,8 +18,11 @@ test('compiled production server serves frontend and real WebSocket rooms', asyn
     for (const asset of [...assets, '/board.png']) assert.equal((await fetch(url + asset)).status, 200);
     const css = await (await fetch(url + assets.find(p => p.endsWith('.css')))).text();
     assert.ok(!css.includes('fonts.googleapis.com'));
-    for (const nickname of ['운영검증1', '운영검증2']) {
-      const socket = io(url, { transports: ['websocket'], forceNew: true, auth: { token: randomUUID(), nickname } });
+    for (const [index, nickname] of ['운영검증1', '운영검증2'].entries()) {
+      const registration = await fetch(`${url}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nickname, password: `verify${index + 1}` }) });
+      assert.equal(registration.status, 201);
+      const cookie = registration.headers.get('set-cookie').split(';')[0];
+      const socket = io(url, { transports: ['websocket'], forceNew: true, extraHeaders: { Cookie: cookie } });
       clients.push(socket);
       await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('connect_error', reject); });
       assert.equal(socket.io.engine.transport.name, 'websocket');

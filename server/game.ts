@@ -5,7 +5,7 @@ import { type ChatMessage, type Gesture, type Mode, type Player, type RoomState,
 export class GameRoom {
   state: Omit<RoomState, 'serverTime' | 'rpsSelected' | 'forbiddenMoves'>;
   choices: [Gesture | null, Gesture | null] = [null, null];
-  constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now(), turnSeconds = 30, rules: RoomState['rules'] = 'freestyle') {
+  constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now(), turnSeconds = 30, rules: RoomState['rules'] = 'freestyle', private onFinish?: (room: GameRoom) => void) {
     if (!['freestyle', 'renju'].includes(rules)) throw new Error('올바른 오목 규칙을 선택해주세요.');
     if (!Number.isInteger(turnSeconds) || turnSeconds < 2 || turnSeconds > 300) throw new Error('제한 시간은 2~300초 사이의 정수로 설정해주세요.');
     this.state = { code, name, mode, rules, turnSeconds, gameId: '', startedAt: null, finishedAt: null, drawOffer: null, rematchOffer: null, hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, rpsRetryReason: null, rpsResult: null, winningLine: [], result: null, chat: [] };
@@ -129,6 +129,7 @@ export class GameRoom {
     this.state.finishedAt = this.now(); this.state.drawOffer = null;
     this.state.phase = 'finished'; this.state.result = { winner, reason }; this.state.deadline = null; this.state.currentSeat = null;
     this.message(`${winner === null ? '무승부' : `${winner + 1}팀 승리`} · ${reason}`);
+    this.onFinish?.(this);
   }
   tick() {
     let changed = false;

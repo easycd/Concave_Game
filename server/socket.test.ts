@@ -85,6 +85,9 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     await waitFor(() => views.get(6)?.phase === 'finished');
     assert.equal(views.get(6)?.result?.winner, null);
     assert.equal((await send(players[1], 'rematch')).ok, true);
+    await waitFor(() => views.get(6)?.rematchOffer?.team === 1);
+    assert.equal(views.get(6)?.phase, 'finished');
+    assert.equal((await send(players[0], 'rematch')).ok, true);
     await waitFor(() => views.get(6)?.phase === 'lobby');
     assert.equal((await send(reconnected, 'leave')).ok, true);
     for (const i of [0, 1, 3]) assert.equal((await send(players[i], 'leave')).ok, true);

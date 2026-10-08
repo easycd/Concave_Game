@@ -94,5 +94,6 @@
 .rematch-button,.draw-button{width:100%;min-height:44px;border:2px solid #294b3d;border-radius:7px;font-size:13px;font-weight:800;background:#294b3d;color:#fff;box-shadow:0 3px 0 #203b2e}
 .draw-button{background:#e5ecdf;color:#294b3d;box-shadow:none}.match-actions button:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
 .draw-offer{margin-top:16px;padding:15px;border:2px solid #bc8f34;background:#fff4d4;color:#483a1a;border-radius:10px}.draw-offer strong{font-size:17px}.draw-offer p{font-size:12px;margin:8px 0}.draw-offer b{font-size:19px;color:#9a3c22}.draw-offer>div{display:flex;gap:8px;margin:12px 0}.draw-offer button{flex:1;min-height:40px;background:#294b3d;color:white;border-radius:6px;font-weight:800}.draw-offer button+button{background:#8c4238}.draw-offer small{display:block;font-size:11px;margin-top:10px}
+.rematch-offer{padding:12px;border:1px solid #73936d;border-radius:8px;background:#eef5e9;color:#294b3d;text-align:center}.rematch-offer strong{font-size:13px}.rematch-offer p{font-size:11px;margin-top:5px;line-height:1.5}
 @media(prefers-reduced-motion:reduce){.board-wrap.board-time-warning{animation:none;box-shadow:0 0 16px 5px #ef303090}}
 @media(max-width:650px){.match-clock{padding:5px 10px}.match-clock strong{font-size:19px}.match-actions{margin-top:0}.draw-offer{margin-top:0}}

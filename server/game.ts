@@ -8,7 +8,7 @@ export class GameRoom {
   constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now(), turnSeconds = 30, rules: RoomState['rules'] = 'freestyle') {
     if (!['freestyle', 'renju'].includes(rules)) throw new Error('올바른 오목 규칙을 선택해주세요.');
     if (!Number.isInteger(turnSeconds) || turnSeconds < 2 || turnSeconds > 300) throw new Error('제한 시간은 2~300초 사이의 정수로 설정해주세요.');
-    this.state = { code, name, mode, rules, turnSeconds, gameId: '', startedAt: null, finishedAt: null, drawOffer: null, hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, rpsRetryReason: null, rpsResult: null, result: null, winningLine: [], chat: [] };
+    this.state = { code, name, mode, rules, turnSeconds, gameId: '', startedAt: null, finishedAt: null, drawOffer: null, rematchOffer: null, hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, rpsRetryReason: null, rpsResult: null, winningLine: [], result: null, chat: [] };
   }
   emptyBoard() { return Array.from({ length: 15 }, () => Array<number>(15).fill(0)); }
   private forbiddenCache = { board: '', moves: [] as ForbiddenMove[] };
@@ -57,7 +57,7 @@ export class GameRoom {
     this.state.currentSeat = null; this.state.rpsRound = 0;
     this.choices = [null, null]; this.state.rpsResult = null; this.state.rpsRetryReason = null;
     this.state.gameId = randomUUID();
-    this.state.startedAt = null; this.state.finishedAt = null; this.state.drawOffer = null;
+    this.state.startedAt = null; this.state.finishedAt = null; this.state.drawOffer = null; this.state.rematchOffer = null;
     if (this.state.blackTeam === null) this.newRound();
     else {
       this.message(`흑백을 바꿔 새 대국을 시작합니다. ${this.state.blackTeam + 1}팀이 흑돌로 선공합니다. 가위바위보는 생략합니다.`);
@@ -156,7 +156,16 @@ export class GameRoom {
     else { this.state.drawOffer = null; this.message(`${p.nickname}님이 무승부 신청을 거절했습니다.`); }
   }
   requestRematch(id: string) {
-    if (this.player(id).seat === null) throw new Error('플레이어만 한 판 더 신청할 수 있습니다.');
+    const p = this.player(id);
+    if (this.state.phase !== 'finished' || p.seat === null) throw new Error('대국을 마친 플레이어만 한 판 더 신청할 수 있습니다.');
+    const team = teamOf(p.seat);
+    if (!this.state.rematchOffer) {
+      this.state.rematchOffer = { team, nickname: p.nickname };
+      this.message(`${p.nickname}님이 한 판 더 신청했습니다. 상대 팀이 수락하면 준비 화면으로 이동합니다.`);
+      return;
+    }
+    if (this.state.rematchOffer.team === team) throw new Error('상대 팀의 수락을 기다리고 있습니다.');
+    this.message(`${p.nickname}님이 한 판 더 신청을 수락했습니다.`);
     this.reset(this.state.hostId);
   }
   resign(id: string) {
@@ -179,7 +188,7 @@ export class GameRoom {
     this.choices = [null, null]; this.state.rpsRetryReason = null; this.state.rpsResult = null;
     if (this.state.blackTeam !== null) this.state.blackTeam = (1 - this.state.blackTeam) as Team;
     this.state.currentSeat = null; this.state.deadline = null;
-    this.state.startedAt = null; this.state.finishedAt = null; this.state.drawOffer = null;
+    this.state.startedAt = null; this.state.finishedAt = null; this.state.drawOffer = null; this.state.rematchOffer = null;
     this.state.board = this.emptyBoard(); this.state.moves = []; this.state.result = null; this.state.winningLine = [];
     this.message(this.state.blackTeam === null ? '새로운 대국을 준비합니다. 자리를 선택하고 준비해주세요.' : `다음 대국은 ${this.state.blackTeam + 1}팀 흑돌, ${2 - this.state.blackTeam}팀 백돌입니다. 모두 준비하면 가위바위보 없이 시작합니다.`);
   }

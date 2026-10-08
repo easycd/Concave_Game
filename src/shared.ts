@@ -24,6 +24,7 @@ export interface RoomState {
   startedAt: number | null;
   finishedAt: number | null;
   drawOffer: { team: Team; nickname: string; expiresAt: number } | null;
+  rematchOffer: { team: Team; nickname: string } | null;
   hostId: string;
   phase: Phase;
   players: Player[];

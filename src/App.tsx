@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { ArrowLeft, ArrowRight, Check, ChevronRight, Copy, Crown, Eye, Flag, Lock, LogOut, MessageCircle, Plus, Radio, Send, Shield, Trophy, Users, X } from 'lucide-react';
-import { type AccountStats, type AuthReply, type ChatMessage, type Gesture, type Mode, type RuleSet, type Player, type Reply, type RoomState, type RoomSummary, seatsFor, teamOf } from './shared';
+import { type AccountStats, type AuthReply, type ChatMessage, type Gesture, type Mode, type OnlineUser, type RuleSet, type Player, type Reply, type RoomState, type RoomSummary, seatsFor, teamOf } from './shared';
 
 const phaseLabel = { lobby: '대기 중', rps: '가위바위보', playing: '대국 중', finished: '대국 종료' };
 const gestures: { value: Gesture; label: string; symbol: string }[] = [{ value: 'scissors', label: '가위', symbol: '✌️' }, { value: 'rock', label: '바위', symbol: '✊' }, { value: 'paper', label: '보', symbol: '🖐️' }];
@@ -25,6 +25,9 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [identity, setIdentity] = useState('');
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const [lobbyMessages, setLobbyMessages] = useState<ChatMessage[]>([]);
+  const [lobbyChat, setLobbyChat] = useState('');
   const [room, setRoom] = useState<RoomState | null>(null);
   const [rules, setRules] = useState<RuleSet>('freestyle');
   const [mode, setMode] = useState<Mode>('1v1');
@@ -42,6 +45,7 @@ export default function App() {
   const socket = useRef<Socket | null>(null);
   const [chat, setChat] = useState('');
   const chatEnd = useRef<HTMLDivElement>(null);
+  const lobbyChatEnd = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hover, setHover] = useState<[number, number] | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -81,6 +85,7 @@ export default function App() {
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', refreshTime); window.removeEventListener('focus', refreshTime); };
   }, []);
   useEffect(() => { const messages = chatEnd.current?.parentElement; if (messages) messages.scrollTop = messages.scrollHeight; }, [room?.chat.at(-1)?.id]);
+  useEffect(() => { const messages = lobbyChatEnd.current?.parentElement; if (messages) messages.scrollTop = messages.scrollHeight; }, [lobbyMessages.at(-1)?.id]);
   useEffect(() => {
     if (!entered) return;
     const s = io({ reconnectionDelay: 500, reconnectionDelayMax: 2000 }); socket.current = s;
@@ -89,6 +94,9 @@ export default function App() {
     s.on('connect_error', e => { setConnected(false); notice(e.message === 'xhr poll error' ? '서버에 연결할 수 없습니다. 연결을 다시 시도합니다.' : e.message); });
     s.on('identity', ({ id, nickname: name }: { id: string; nickname: string }) => { setIdentity(id); setNickname(name); });
     s.on('rooms', setRooms);
+    s.on('onlineUsers', setOnlineUsers);
+    s.on('lobbyChatHistory', setLobbyMessages);
+    s.on('lobbyChat', (message: ChatMessage) => setLobbyMessages(previous => [...previous, message].slice(-100)));
     s.on('statsUpdated', () => void refreshAccount());
     s.on('chat', (message: ChatMessage) => setRoom(r => r ? { ...r, chat: [...r.chat, message].slice(-100) } : r));
     s.on('roomClosed', () => notice('모든 플레이어가 퇴장하여 방이 닫혔습니다.'));
@@ -124,6 +132,15 @@ export default function App() {
     setChat('');
     socket.current.timeout(5000).emit('chat', { text }, (err: Error | null, reply: Reply) => {
       if (err || !reply.ok) notice(err ? '채팅 전송을 확인하지 못했습니다. 연결을 확인해주세요.' : reply.error ?? '채팅 전송에 실패했습니다.');
+    });
+  }
+  function sendLobbyChat(e: FormEvent) {
+    e.preventDefault();
+    const text = lobbyChat.trim();
+    if (!text || !socket.current?.connected || room) return;
+    setLobbyChat('');
+    socket.current.timeout(5000).emit('lobbyChat', { text }, (err: Error | null, reply: Reply) => {
+      if (err || !reply.ok) notice(err ? '전체 채팅 전송을 확인하지 못했습니다.' : reply.error ?? '전체 채팅 전송에 실패했습니다.');
     });
   }
   async function enter(e: FormEvent) {
@@ -197,6 +214,7 @@ export default function App() {
     {historyOpen ? <HistoryPage records={records} onBack={() => setHistoryOpen(false)} /> : !room ? <main className="lobby-page">
       <div className="page-intro"><div><span className="eyebrow">THE LOBBY</span><h1>오늘은 누구와 둘까요?</h1><p>새로운 방을 만들거나, 친구의 방에 들어가세요.</p></div><button className="primary" onClick={() => setCreating(true)} disabled={!connected}><Plus size={18} /> 방 만들기</button></div>
       <section className="ranking-dashboard"><article className="my-record-card"><span className="eyebrow">MY RECORD</span><div className="record-owner"><span>{nickname.slice(0, 1)}</span><div><strong>{nickname}</strong><small>{account?.games ?? 0}전 · 승률 {account?.winRate ?? 0}%</small></div></div><div className="record-counts"><div><b>{account?.wins ?? 0}</b><span>승리</span></div><div><b>{account?.losses ?? 0}</b><span>패배</span></div><div><b>{account?.draws ?? 0}</b><span>무승부</span></div></div></article><article className="ranking-card"><div className="ranking-title"><div><Crown size={21} /><span><strong>승리 랭킹 TOP 10</strong><small>승리 횟수가 많은 순서</small></span></div><button onClick={() => void refreshAccount()}>새로고침</button></div>{ranking.length ? <ol>{ranking.map((player, index) => <li key={player.id} className={player.id === account?.id ? 'mine' : ''}><span className={`rank rank-${index + 1}`}>{index + 1}</span><strong>{player.nickname}{player.id === account?.id && <em>나</em>}</strong><span>{player.games}전 · {player.winRate}%</span><b>{player.wins}승</b></li>)}</ol> : <p className="ranking-empty">아직 기록된 대국이 없습니다. 첫 승리의 주인공이 되어보세요.</p>}</article></section>
+      <section className="lobby-community"><article className="lobby-chat-panel"><div className="lobby-panel-heading"><div><MessageCircle size={22} /><span><strong>로비 전체 채팅</strong><small>로비에 있는 플레이어들과 이야기해보세요.</small></span></div><b>{lobbyMessages.length}</b></div><div className="lobby-chat-messages">{lobbyMessages.length ? lobbyMessages.map(message => <div className={`lobby-chat-message ${message.nickname === nickname ? 'mine' : ''}`} key={message.id}><div><strong>{message.nickname}</strong><time>{new Date(message.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</time></div><p>{message.text}</p></div>) : <div className="lobby-chat-empty"><MessageCircle size={28} /><strong>아직 대화가 없습니다</strong><span>먼저 인사를 건네보세요.</span></div>}<div ref={lobbyChatEnd} /></div><form className="lobby-chat-input" onSubmit={sendLobbyChat}><input aria-label="로비 전체 채팅 메시지" placeholder="전체 채팅에 메시지를 입력하세요" maxLength={200} value={lobbyChat} onChange={e => setLobbyChat(e.target.value)} /><button aria-label="로비 메시지 보내기" disabled={!lobbyChat.trim() || !connected}><Send size={20} /></button></form></article><aside className="online-panel"><div className="lobby-panel-heading"><div><Users size={22} /><span><strong>현재 접속자</strong><small>오목에 접속 중인 플레이어</small></span></div><b>{onlineUsers.length}</b></div><div className="online-user-list">{onlineUsers.map(user => <article className="online-user" key={user.id}><span className="online-avatar">{user.nickname.slice(0, 1)}</span><div><strong>{user.nickname}{user.id === account?.id && <em>나</em>}</strong><small>{user.games}전 · {user.wins}승 {user.losses}패 {user.draws}무 · 승률 {user.winRate}%</small></div><span className={`presence-status ${user.status}`}>{user.status === 'playing' ? '플레이중' : '대기중'}</span></article>)}</div></aside></section>
       <div className="lobby-layout"><section className="room-list"><div className="section-heading"><h2>열려 있는 방 <span className="count">{rooms.length}</span></h2><span className="quiet"><Radio size={14} /> 실시간 업데이트</span></div>
         {rooms.length === 0 ? <div className="empty-rooms"><span className="empty-symbol"><Stone color="black" /><Stone color="white" /></span><h3>첫 번째 대국을 열어보세요</h3><p>아직 열린 방이 없어요.<br />친구를 초대하고 함께 시작해볼까요?</p><button className="secondary" onClick={() => setCreating(true)}>방 만들기 <ArrowRight size={16} /></button></div> : <div className="room-cards">{rooms.map(r => <article className="room-card" key={r.code}><div className="room-card-top"><div className="room-tags"><span className="mode-tag">{r.mode === '1v1' ? '1 : 1' : '2 : 2'}</span>{r.rules === 'renju' && <span className="renju-badge"><Shield size={14} />렌주 규칙 적용</span>}</div><span className={`status-tag ${r.phase === 'lobby' ? 'green' : ''}`}>{phaseLabel[r.phase]}</span></div><h3>{r.name}</h3><span className="room-code">#{r.code}</span><div className="room-card-bottom"><span><Users size={15} />{r.players}/{r.mode === '1v1' ? 2 : 4}<Eye size={15} />{r.spectators}/3</span><button className="text-button" onClick={() => void send('join', { code: r.code })} disabled={pending || !connected}>{r.phase === 'lobby' ? '입장' : '관전'}<ArrowRight size={16} /></button></div></article>)}</div>}
       </section><aside className="lobby-aside"><div className="invite-card"><span className="eyebrow">PLAY WITH FRIENDS</span><h2>친구가 기다리고 있나요?</h2><p>전달받은 6자리 방 코드를 입력하세요.</p><form onSubmit={e => { e.preventDefault(); void send('join', { code: joinCode }); }}><input aria-label="방 코드" placeholder="예: A1B2C3" maxLength={6} value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())} /><button className="primary" disabled={joinCode.length !== 6 || pending || !connected}>방 입장하기 <ArrowRight size={16} /></button></form><button className="text-button spectator-join" disabled={joinCode.length !== 6 || pending || !connected} onClick={() => void send('join', { code: joinCode, spectator: true })}><Eye size={15} /> 관전자로 입장</button></div><div className="rules-card"><h3>한 판의 약속</h3><p><span>01</span> 방마다 제한 시간 설정 · 시간 초과 시 팀 패배</p><p><span>02</span> 첫 판은 가위바위보 · 다음 판은 흑백 교대</p><p><span>03</span> 2대2는 팀을 번갈아 한 수씩</p><p><span>04</span> 방 생성 시 자유 오목 / 렌주 규칙 선택</p></div></aside></div>

@@ -1,11 +1,11 @@
 import express from 'express';
 import { createServer } from 'node:http';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { Server } from 'socket.io';
 import { GameRoom } from './game.js';
-import { type Reply, type RoomSummary } from '../src/shared.js';
+import { type AccountStats, type ChatMessage, type OnlineUser, type Reply, type RoomSummary } from '../src/shared.js';
 import { createAccountStore, type AccountStore } from './accounts.js';
 
 const { createNightfall, handleNightfallRequest } = await import(pathToFileURL(path.resolve(process.cwd(), 'nightfall/server.js')).href);
@@ -18,9 +18,16 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
   const accounts = options.accountStore ?? createAccountStore();
   const ready = accounts.init();
   const rooms = new Map<string, GameRoom>();
-  const sessions = new Map<string, { nickname: string; room: string | null; socketId: string | null; disconnectedAt: number | null; lastAction: number }>();
+  const sessions = new Map<string, { nickname: string; stats: AccountStats; room: string | null; socketId: string | null; disconnectedAt: number | null; lastAction: number }>();
+  const lobbyChat: ChatMessage[] = [];
   const summaries = (): RoomSummary[] => [...rooms.values()].map(({ state: s }) => ({ code: s.code, name: s.name, mode: s.mode, rules: s.rules, phase: s.phase, players: s.players.filter(p => p.seat !== null).length, spectators: s.players.filter(p => p.seat === null).length }));
-  const directory = () => io.emit('rooms', summaries());
+  const onlineUsers = (): OnlineUser[] => [...sessions.entries()].filter(([, session]) => session.socketId).map(([id, session]) => {
+    const room = session.room ? rooms.get(session.room) : null;
+    const player = room?.state.players.find(candidate => candidate.id === id);
+    const status: OnlineUser['status'] = room && ['rps', 'playing'].includes(room.state.phase) && player?.seat != null ? 'playing' : 'waiting';
+    return { ...session.stats, nickname: session.nickname, status };
+  }).sort((a, b) => a.status === b.status ? a.nickname.localeCompare(b.nickname, 'ko') : a.status === 'playing' ? -1 : 1);
+  const directory = () => { io.emit('rooms', summaries()); io.emit('onlineUsers', onlineUsers()); };
   const broadcast = (room: GameRoom) => { io.to(room.state.code).emit('room', room.view()); directory(); };
   const afterRemoval = (room: GameRoom) => {
     if (room.state.players.some(p => p.seat !== null)) { broadcast(room); return; }
@@ -68,13 +75,16 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
     const token: string = socket.data.token;
     const existing = sessions.get(token);
     if (existing?.socketId) io.sockets.sockets.get(existing.socketId)?.disconnect(true);
-    const session = existing ?? { nickname: socket.data.nickname, room: null, socketId: null, disconnectedAt: null, lastAction: 0 };
+    const account = socket.data.account as AccountStats | undefined;
+    const fallbackStats: AccountStats = { id: token, nickname: socket.data.nickname, wins: 0, losses: 0, draws: 0, games: 0, winRate: 0 };
+    const session = existing ?? { nickname: socket.data.nickname, stats: account ?? fallbackStats, room: null, socketId: null, disconnectedAt: null, lastAction: 0 };
     if (!session.room) session.nickname = socket.data.nickname;
+    if (account) session.stats = account;
     session.socketId = socket.id; session.disconnectedAt = null; sessions.set(token, session);
-    socket.emit('identity', { id: token, nickname: session.nickname }); socket.emit('rooms', summaries());
+    socket.emit('identity', { id: token, nickname: session.nickname }); socket.emit('rooms', summaries()); socket.emit('onlineUsers', onlineUsers()); socket.emit('lobbyChatHistory', lobbyChat);
     const oldRoom = session.room ? rooms.get(session.room) : null;
     if (oldRoom) { oldRoom.player(token).connected = true; socket.join(oldRoom.state.code); broadcast(oldRoom); }
-    else { session.room = null; socket.emit('room', null); }
+    else { session.room = null; socket.emit('room', null); directory(); }
     const active = () => { const room = session.room && rooms.get(session.room); if (!room) throw new Error('먼저 방에 입장해주세요.'); return room; };
     const leave = () => {
       if (!session.room) return;
@@ -86,7 +96,7 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
       const reply = typeof ack === 'function' ? ack as (r: Reply) => void : () => {};
       try {
         if (session.socketId !== socket.id) throw new Error('다른 창에서 연결되었습니다.');
-        if (event !== 'chat' && event !== 'leave') {
+        if (!['chat', 'lobbyChat', 'leave'].includes(event)) {
           if (Date.now() - session.lastAction < 60) throw new Error('잠시 후 다시 시도해주세요.');
           session.lastAction = Date.now();
         }
@@ -102,9 +112,11 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
       const room = new GameRoom(code, name, data.mode, token, () => Date.now(), data.turnSeconds ?? 30, data.rules ?? 'freestyle', finished => {
         const result = finished.state.result; if (!result) return;
         const players = finished.state.players.filter(player => player.seat !== null).map(player => ({ id: player.id, team: (player.seat! % 2) as 0 | 1 }));
-        void accounts.recordGame(finished.state.gameId, finished.state.mode, result.winner, players).then(changed => {
+        void accounts.recordGame(finished.state.gameId, finished.state.mode, result.winner, players).then(async changed => {
           if (!changed) return;
+          await Promise.all(players.map(async player => { const stats = await accounts.stats(player.id); const playerSession = sessions.get(player.id); if (stats && playerSession) playerSession.stats = stats; }));
           for (const client of io.sockets.sockets.values()) if (players.some(player => player.id === client.data.token)) client.emit('statsUpdated');
+          directory();
         }).catch(error => console.error('전적 저장 실패:', error));
       }); room.add(token, session.nickname);
       rooms.set(code, room); session.room = code; socket.join(code); broadcast(room); return { ok: true, code };
@@ -131,11 +143,18 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
       const msg = cleanText(data?.text, 200); room.message(msg, session.nickname, false);
       io.to(room.state.code).emit('chat', room.state.chat.at(-1));
     });
+    action('lobbyChat', data => {
+      if (session.room) throw new Error('로비에서만 전체 채팅을 보낼 수 있습니다.');
+      const message: ChatMessage = { id: randomUUID(), nickname: session.nickname, text: cleanText(data?.text, 200), system: false, time: Date.now() };
+      lobbyChat.push(message); if (lobbyChat.length > 100) lobbyChat.splice(0, lobbyChat.length - 100);
+      io.emit('lobbyChat', message);
+    });
     socket.on('disconnect', () => {
       if (session.socketId !== socket.id) return;
       session.socketId = null; session.disconnectedAt = Date.now();
       const room = session.room && rooms.get(session.room);
       if (room) { const p = room.player(token); p.connected = false; p.ready = false; broadcast(room); }
+      else directory();
     });
   });
   const interval = setInterval(() => {

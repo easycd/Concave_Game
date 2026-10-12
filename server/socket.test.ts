@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { io as client, type Socket } from 'socket.io-client';
 import { createGameServer } from './index.js';
-import { type Reply, type RoomState } from '../src/shared.js';
+import { type ChatMessage, type OnlineUser, type Reply, type RoomState } from '../src/shared.js';
 
 test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async () => {
   const server = createGameServer({ allowLegacyAuth: true });
@@ -14,11 +14,16 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
   const sockets: Socket[] = [];
   const tokens: string[] = [];
   const views = new Map<number, RoomState | null>();
+  const onlineViews = new Map<number, OnlineUser[]>();
+  const lobbyViews = new Map<number, ChatMessage[]>();
   async function connect(index: number, token: string = randomUUID()) {
     tokens[index] = token;
     const s = client(url, { auth: { token, nickname: `테스트${index}` }, forceNew: true }); sockets.push(s);
     s.on('room', r => views.set(index, r));
     s.on('chat', message => { const r = views.get(index); if (r) views.set(index, { ...r, chat: [...r.chat, message].slice(-100) }); });
+    s.on('onlineUsers', users => onlineViews.set(index, users));
+    s.on('lobbyChatHistory', messages => lobbyViews.set(index, messages));
+    s.on('lobbyChat', message => lobbyViews.set(index, [...(lobbyViews.get(index) ?? []), message].slice(-100)));
     await new Promise<void>((resolve, reject) => { s.once('connect', resolve); s.once('connect_error', reject); });
     return s;
   }
@@ -32,6 +37,11 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
   }
   try {
     const players = await Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map(i => connect(i)));
+    await waitFor(() => onlineViews.get(0)?.length === 8);
+    assert.ok(onlineViews.get(0)?.every(user => user.status === 'waiting'));
+    assert.equal((await send(players[7], 'lobbyChat', { text: '로비 전체 인사' })).ok, true);
+    await waitFor(() => lobbyViews.get(0)?.at(-1)?.text === '로비 전체 인사');
+    assert.equal(lobbyViews.get(0)?.at(-1)?.nickname, '테스트7');
     const created = await send(players[0], 'create', { name: '온라인 검증', mode: '2v2', turnSeconds: 60 }); assert.equal(created.ok, true); const code = created.code!;
     for (let i = 1; i < 7; i++) assert.equal((await send(players[i], 'join', { code })).ok, true);
     assert.equal((await send(players[7], 'join', { code, spectator: true })).ok, false);
@@ -39,6 +49,9 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     for (let i = 0; i < 4; i++) assert.equal((await send(players[i], 'ready')).ok, true);
     assert.equal((await send(players[1], 'start')).ok, false);
     assert.equal((await send(players[0], 'start')).ok, true);
+    await waitFor(() => onlineViews.get(0)?.find(user => user.id === tokens[0])?.status === 'playing');
+    assert.equal(onlineViews.get(0)?.find(user => user.id === tokens[4])?.status, 'waiting');
+    assert.equal((await send(players[4], 'lobbyChat', { text: '방 안에서는 전송 불가' })).ok, false);
     assert.equal((await send(players[0], 'rps', { gesture: 'rock' })).ok, true);
     assert.equal((await send(players[1], 'rps', { gesture: 'scissors' })).ok, true);
     assert.equal(views.get(0)?.turnSeconds, 60);

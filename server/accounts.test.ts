@@ -12,6 +12,7 @@ test('accounts reject duplicate nicknames and wrong passwords, then persist one 
   const address = server.http.address(); assert.ok(address && typeof address !== 'string');
   const url = `http://127.0.0.1:${address.port}`;
   const sockets: Socket[] = [];
+  let onlineUsers: any[] = [];
   const post = (path: string, body: object) => fetch(url + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   try {
     const registrations = await Promise.all([
@@ -26,6 +27,7 @@ test('accounts reject duplicate nicknames and wrong passwords, then persist one 
     assert.equal(wrong.status, 401); assert.equal((await wrong.json()).error, '비밀번호가 다릅니다.');
     for (const cookie of cookies) {
       const socket = io(url, { forceNew: true, extraHeaders: { Cookie: cookie } }); sockets.push(socket);
+      socket.on('onlineUsers', users => { onlineUsers = users; });
       await new Promise<void>((resolve, reject) => { socket.once('connect', resolve); socket.once('connect_error', reject); });
     }
     const send = (socket: Socket, event: string, data = {}) => new Promise<any>((resolve, reject) => socket.timeout(2000).emit(event, data, (error: Error | null, reply: any) => error ? reject(error) : resolve(reply)));
@@ -43,6 +45,12 @@ test('accounts reject duplicate nicknames and wrong passwords, then persist one 
       reject(new Error('전적 저장 시간 초과'));
     });
     assert.equal(ranking[0].nickname, '랭커하나'); assert.equal(ranking[0].wins, 1); assert.equal(ranking[1].losses, 1);
+    await new Promise<void>(async (resolve, reject) => {
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) { if (onlineUsers.find(user => user.nickname === '랭커하나')?.wins === 1) return resolve(); await new Promise(wait => setTimeout(wait, 20)); }
+      reject(new Error('접속자 전적 갱신 시간 초과'));
+    });
+    assert.equal(onlineUsers.find(user => user.nickname === '랭커둘')?.losses, 1);
     assert.equal(await accounts.recordGame(server.rooms.get(created.code)!.state.gameId, '1v1', 0, []), false);
   } finally { sockets.forEach(socket => socket.disconnect()); await server.close(); }
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { io as client, type Socket } from 'socket.io-client';
 import { createGameServer } from './index.js';
-import { type ChatMessage, type OnlineUser, type Reply, type RoomState } from '../src/shared.js';
+import { type ChatMessage, type OnlineUser, type Reply, type RoomInvite, type RoomState, type WhisperMessage } from '../src/shared.js';
 
 test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async () => {
   const server = createGameServer({ allowLegacyAuth: true });
@@ -16,6 +16,10 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
   const views = new Map<number, RoomState | null>();
   const onlineViews = new Map<number, OnlineUser[]>();
   const lobbyViews = new Map<number, ChatMessage[]>();
+  const invites = new Map<number, RoomInvite>();
+  const whispers = new Map<number, WhisperMessage[]>();
+  const whisperClosures = new Map<number, string>();
+  const kicks = new Map<number, string>();
   async function connect(index: number, token: string = randomUUID()) {
     tokens[index] = token;
     const s = client(url, { auth: { token, nickname: `테스트${index}` }, forceNew: true }); sockets.push(s);
@@ -24,6 +28,10 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     s.on('onlineUsers', users => onlineViews.set(index, users));
     s.on('lobbyChatHistory', messages => lobbyViews.set(index, messages));
     s.on('lobbyChat', message => lobbyViews.set(index, [...(lobbyViews.get(index) ?? []), message].slice(-100)));
+    s.on('roomInvite', invite => invites.set(index, invite));
+    s.on('whisperMessage', ({ message }) => whispers.set(index, [...(whispers.get(index) ?? []), message]));
+    s.on('whisperClosed', ({ nickname }) => whisperClosures.set(index, nickname));
+    s.on('kicked', ({ roomName }) => kicks.set(index, roomName));
     await new Promise<void>((resolve, reject) => { s.once('connect', resolve); s.once('connect_error', reject); });
     return s;
   }
@@ -102,16 +110,31 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     await waitFor(() => views.get(6)?.rematchOffer?.team === 1);
     assert.equal(views.get(6)?.phase, 'finished');
     assert.equal((await send(players[0], 'rematch')).ok, true);
-    await waitFor(() => views.get(6)?.phase === 'lobby');
+    await waitFor(() => [0, 1, 2, 3, 6].every(index => views.get(index)?.phase === 'lobby'));
     assert.equal((await send(reconnected, 'leave')).ok, true);
     for (const i of [0, 1, 3]) assert.equal((await send(players[i], 'leave')).ok, true);
     await waitFor(() => views.get(4) === null);
     assert.equal(server.rooms.has(code), false);
     assert.equal((await send(players[7], 'join', { code })).ok, false);
-    const instantRoom = await send(players[7], 'create', { name: '즉시 홈 이동', mode: '1v1' });
-    assert.equal(instantRoom.ok, true);
+    const protectedRoom = await send(players[7], 'create', { name: '비밀 초대방', mode: '1v1', password: '4321' });
+    assert.equal(protectedRoom.ok, true);
+    assert.equal((await send(players[6], 'join', { code: protectedRoom.code })).ok, false);
+    assert.equal((await send(players[6], 'join', { code: protectedRoom.code, password: 'wrong' })).ok, false);
+    assert.equal((await send(players[7], 'invite', { targetId: tokens[6] })).ok, true);
+    await waitFor(() => invites.get(6)?.roomCode === protectedRoom.code);
+    assert.equal(invites.get(6)?.locked, true);
+    assert.equal((await send(players[7], 'whisperOpen', { targetId: tokens[6] })).ok, true);
+    assert.equal((await send(players[7], 'whisperMessage', { targetId: tokens[6], text: '비밀 초대 메시지' })).ok, true);
+    await waitFor(() => whispers.get(6)?.at(-1)?.text === '비밀 초대 메시지');
+    assert.equal((await send(players[6], 'whisperClose', { targetId: tokens[7] })).ok, true);
+    await waitFor(() => whisperClosures.get(7) === '테스트6');
+    assert.equal((await send(players[6], 'join', { code: protectedRoom.code, password: '4321' })).ok, true);
+    assert.equal((await send(players[7], 'kick', { targetId: tokens[6] })).ok, true);
+    await waitFor(() => kicks.get(6) === '비밀 초대방' && views.get(6) === null);
+    assert.equal((await send(players[6], 'join', { code: protectedRoom.code, password: '4321' })).ok, true);
+    assert.equal((await send(players[6], 'leave')).ok, true);
     const instantLeave = await new Promise<Reply>(resolve => players[7].emit('leave', {}, resolve));
     assert.equal(instantLeave.ok, true);
-    assert.equal(server.rooms.has(instantRoom.code!), false);
+    assert.equal(server.rooms.has(protectedRoom.code!), false);
   } finally { sockets.forEach(s => s.disconnect()); await server.close(); }
 });

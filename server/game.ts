@@ -5,11 +5,12 @@ import { type ChatMessage, type Gesture, type Mode, type Player, type RoomState,
 export class GameRoom {
   state: Omit<RoomState, 'serverTime' | 'rpsSelected' | 'forbiddenMoves'>;
   choices: [Gesture | null, Gesture | null] = [null, null];
-  constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now(), turnSeconds = 30, rules: RoomState['rules'] = 'freestyle', private onFinish?: (room: GameRoom) => void) {
+  constructor(code: string, name: string, mode: Mode, hostId: string, private now = () => Date.now(), turnSeconds = 30, rules: RoomState['rules'] = 'freestyle', private onFinish?: (room: GameRoom) => void, private roomPassword: string | null = null) {
     if (!['freestyle', 'renju'].includes(rules)) throw new Error('올바른 오목 규칙을 선택해주세요.');
     if (!Number.isInteger(turnSeconds) || turnSeconds < 2 || turnSeconds > 300) throw new Error('제한 시간은 2~300초 사이의 정수로 설정해주세요.');
-    this.state = { code, name, mode, rules, turnSeconds, gameId: '', startedAt: null, finishedAt: null, drawOffer: null, rematchOffer: null, hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, rpsRetryReason: null, rpsResult: null, winningLine: [], result: null, chat: [] };
+    this.state = { code, name, mode, rules, locked: roomPassword !== null, turnSeconds, gameId: '', startedAt: null, finishedAt: null, drawOffer: null, rematchOffer: null, hostId, phase: 'lobby', players: [], board: this.emptyBoard(), moves: [], blackTeam: null, currentSeat: null, deadline: null, rpsRound: 0, rpsRetryReason: null, rpsResult: null, winningLine: [], result: null, chat: [] };
   }
+  acceptsPassword(password: unknown) { return !this.roomPassword || password === this.roomPassword; }
   emptyBoard() { return Array.from({ length: 15 }, () => Array<number>(15).fill(0)); }
   private forbiddenCache = { board: '', moves: [] as ForbiddenMove[] };
   view(): RoomState {

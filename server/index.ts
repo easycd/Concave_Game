@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { Server } from 'socket.io';
 import { GameRoom } from './game.js';
-import { type AccountStats, type ChatMessage, type OnlineUser, type Reply, type RoomSummary } from '../src/shared.js';
+import { type AccountStats, type ChatMessage, type OnlineUser, type Reply, type RoomInvite, type RoomSummary, type WhisperMessage } from '../src/shared.js';
 import { createAccountStore, type AccountStore } from './accounts.js';
 
 const { createNightfall, handleNightfallRequest } = await import(pathToFileURL(path.resolve(process.cwd(), 'nightfall/server.js')).href);
@@ -19,16 +19,35 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
   const ready = accounts.init();
   const rooms = new Map<string, GameRoom>();
   const sessions = new Map<string, { nickname: string; stats: AccountStats; room: string | null; socketId: string | null; disconnectedAt: number | null; lastAction: number }>();
+  const whispers = new Map<string, { members: [string, string] }>();
   const lobbyChat: ChatMessage[] = [];
-  const summaries = (): RoomSummary[] => [...rooms.values()].map(({ state: s }) => ({ code: s.code, name: s.name, mode: s.mode, rules: s.rules, phase: s.phase, players: s.players.filter(p => p.seat !== null).length, spectators: s.players.filter(p => p.seat === null).length }));
+  const summaries = (): RoomSummary[] => [...rooms.values()].map(({ state: s }) => ({ code: s.code, name: s.name, mode: s.mode, rules: s.rules, phase: s.phase, players: s.players.filter(p => p.seat !== null).length, spectators: s.players.filter(p => p.seat === null).length, locked: s.locked }));
   const onlineUsers = (): OnlineUser[] => [...sessions.entries()].filter(([, session]) => session.socketId).map(([id, session]) => {
     const room = session.room ? rooms.get(session.room) : null;
     const player = room?.state.players.find(candidate => candidate.id === id);
     const status: OnlineUser['status'] = room && ['rps', 'playing'].includes(room.state.phase) && player?.seat != null ? 'playing' : 'waiting';
-    return { ...session.stats, nickname: session.nickname, status };
+    const location: OnlineUser['location'] = session.room ? 'room' : 'lobby';
+    return { ...session.stats, nickname: session.nickname, status, location };
   }).sort((a, b) => a.status === b.status ? a.nickname.localeCompare(b.nickname, 'ko') : a.status === 'playing' ? -1 : 1);
   const directory = () => { io.emit('rooms', summaries()); io.emit('onlineUsers', onlineUsers()); };
-  const broadcast = (room: GameRoom) => { io.to(room.state.code).emit('room', room.view()); directory(); };
+  const broadcast = (room: GameRoom) => {
+    const view = room.view();
+    for (const player of room.state.players) {
+      const client = sessions.get(player.id)?.socketId ? io.sockets.sockets.get(sessions.get(player.id)!.socketId!) : null;
+      if (client) { client.join(room.state.code); client.emit('room', view); }
+    }
+    directory();
+  };
+  const whisperKey = (a: string, b: string) => [a, b].sort().join(':');
+  const closeWhispers = (id: string) => {
+    for (const [key, channel] of whispers) {
+      if (!channel.members.includes(id)) continue;
+      const peerId = channel.members.find(member => member !== id)!;
+      const peerSocket = sessions.get(peerId)?.socketId;
+      if (peerSocket) io.to(peerSocket).emit('whisperClosed', { peerId: id, nickname: sessions.get(id)?.nickname ?? '상대방' });
+      whispers.delete(key);
+    }
+  };
   const afterRemoval = (room: GameRoom) => {
     if (room.state.players.some(p => p.seat !== null)) { broadcast(room); return; }
     const code = room.state.code;
@@ -42,6 +61,11 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
   const cleanText = (value: unknown, max: number) => { if (typeof value !== 'string') throw new Error('텍스트를 입력해주세요.'); const v = value.trim().replace(/[\u0000-\u001f\u007f]/g, ''); if (!v || v.length > max) throw new Error(`1~${max}자로 입력해주세요.`); return v; };
   const cleanNickname = (value: unknown) => cleanText(value, 12);
   const cleanPassword = (value: unknown) => { if (typeof value !== 'string' || value.length < 6 || value.length > 72) throw new Error('비밀번호는 6~72자로 입력해주세요.'); return value; };
+  const cleanRoomPassword = (value: unknown) => {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value !== 'string' || value.length < 4 || value.length > 20) throw new Error('방 비밀번호는 4~20자로 입력해주세요.');
+    return value;
+  };
   const cookieName = 'gomoku_session';
   const readCookie = (header = '') => Object.fromEntries(header.split(';').map(part => part.trim().split('=').map(decodeURIComponent)).filter(pair => pair.length === 2))[cookieName];
   const setSessionCookie = (res: express.Response, token: string) => res.setHeader('Set-Cookie', `${cookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
@@ -96,7 +120,7 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
       const reply = typeof ack === 'function' ? ack as (r: Reply) => void : () => {};
       try {
         if (session.socketId !== socket.id) throw new Error('다른 창에서 연결되었습니다.');
-        if (!['chat', 'lobbyChat', 'leave'].includes(event)) {
+        if (!['chat', 'lobbyChat', 'whisperMessage', 'leave'].includes(event)) {
           if (Date.now() - session.lastAction < 60) throw new Error('잠시 후 다시 시도해주세요.');
           session.lastAction = Date.now();
         }
@@ -118,13 +142,14 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
           for (const client of io.sockets.sockets.values()) if (players.some(player => player.id === client.data.token)) client.emit('statsUpdated');
           directory();
         }).catch(error => console.error('전적 저장 실패:', error));
-      }); room.add(token, session.nickname);
+      }, cleanRoomPassword(data.password)); room.add(token, session.nickname);
       rooms.set(code, room); session.room = code; socket.join(code); broadcast(room); return { ok: true, code };
     });
     action('join', data => {
       if (session.room) throw new Error('현재 방에서 먼저 나가주세요.');
       const code = cleanText(data?.code, 6).toUpperCase(); const room = rooms.get(code);
       if (!room) throw new Error('방 코드를 확인해주세요.');
+      if (!room.acceptsPassword(data?.password)) throw new Error(data?.password ? '방 비밀번호가 다릅니다.' : '비밀번호가 필요한 방입니다.');
       room.add(token, session.nickname, data.spectator === true); session.room = code; socket.join(code); broadcast(room); return { ok: true, code };
     });
     action('leave', leave);
@@ -138,6 +163,56 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
     action('rematch', () => { const room = active(); room.requestRematch(token); broadcast(room); });
     action('drawOffer', () => { const room = active(); room.offerDraw(token); broadcast(room); });
     action('drawAnswer', data => { const room = active(); room.answerDraw(token, data?.accept); broadcast(room); });
+    action('invite', data => {
+      const room = active();
+      const targetId = typeof data?.targetId === 'string' ? data.targetId : '';
+      const target = sessions.get(targetId);
+      if (!target?.socketId || target.room) throw new Error('현재 로비에 있는 사용자만 초대할 수 있습니다.');
+      const invite: RoomInvite = { id: randomUUID(), roomCode: room.state.code, roomName: room.state.name, from: session.nickname, locked: room.state.locked };
+      io.to(target.socketId).emit('roomInvite', invite);
+    });
+    action('kick', data => {
+      const room = active();
+      if (room.state.hostId !== token) throw new Error('방장만 추방할 수 있습니다.');
+      const targetId = typeof data?.targetId === 'string' ? data.targetId : '';
+      if (!targetId || targetId === token) throw new Error('추방할 사용자를 확인해주세요.');
+      const targetPlayer = room.state.players.find(player => player.id === targetId);
+      if (!targetPlayer) throw new Error('해당 사용자가 방에 없습니다.');
+      const targetSession = sessions.get(targetId);
+      const targetSocket = targetSession?.socketId ? io.sockets.sockets.get(targetSession.socketId) : null;
+      if (targetSession) targetSession.room = null;
+      targetSocket?.leave(room.state.code); targetSocket?.emit('room', null); targetSocket?.emit('kicked', { roomName: room.state.name });
+      room.remove(targetId); afterRemoval(room);
+    });
+    action('whisperOpen', data => {
+      const targetId = typeof data?.targetId === 'string' ? data.targetId : '';
+      if (!targetId || targetId === token) throw new Error('귓속말 상대를 확인해주세요.');
+      const target = sessions.get(targetId);
+      if (!target?.socketId) throw new Error('상대방이 접속 중이 아닙니다.');
+      if (!session.room || target.room) throw new Error('방에서는 로비에 있는 사용자에게만 귓속말을 시작할 수 있습니다.');
+      const key = whisperKey(token, targetId);
+      whispers.set(key, { members: [token, targetId] });
+      socket.emit('whisperOpened', { peer: { id: targetId, nickname: target.nickname } });
+      io.to(target.socketId).emit('whisperOpened', { peer: { id: token, nickname: session.nickname } });
+    });
+    action('whisperMessage', data => {
+      const targetId = typeof data?.targetId === 'string' ? data.targetId : '';
+      const channel = whispers.get(whisperKey(token, targetId));
+      if (!channel || !channel.members.includes(token)) throw new Error('종료된 귓속말입니다. 다시 시작해주세요.');
+      const target = sessions.get(targetId);
+      if (!target?.socketId) throw new Error('상대방이 접속을 종료했습니다.');
+      const message: WhisperMessage = { id: randomUUID(), senderId: token, nickname: session.nickname, text: cleanText(data?.text, 200), system: false, time: Date.now() };
+      socket.emit('whisperMessage', { peerId: targetId, message });
+      io.to(target.socketId).emit('whisperMessage', { peerId: token, message });
+    });
+    action('whisperClose', data => {
+      const targetId = typeof data?.targetId === 'string' ? data.targetId : '';
+      const key = whisperKey(token, targetId); const channel = whispers.get(key);
+      if (!channel) return;
+      whispers.delete(key);
+      const targetSocketId = sessions.get(targetId)?.socketId;
+      if (targetSocketId) io.to(targetSocketId).emit('whisperClosed', { peerId: token, nickname: session.nickname });
+    });
     action('chat', data => {
       const room = active();
       const msg = cleanText(data?.text, 200); room.message(msg, session.nickname, false);
@@ -151,6 +226,7 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
     });
     socket.on('disconnect', () => {
       if (session.socketId !== socket.id) return;
+      closeWhispers(token);
       session.socketId = null; session.disconnectedAt = Date.now();
       const room = session.room && rooms.get(session.room);
       if (room) { const p = room.player(token); p.connected = false; p.ready = false; broadcast(room); }

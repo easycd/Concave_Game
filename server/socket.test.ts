@@ -58,6 +58,8 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     assert.equal((await send(players[1], 'start')).ok, false);
     assert.equal((await send(players[0], 'start')).ok, true);
     await waitFor(() => onlineViews.get(0)?.find(user => user.id === tokens[0])?.status === 'playing');
+    assert.equal((await send(players[0], 'kick', { targetId: tokens[1] })).ok, false, '방장은 진행 중인 대국의 상대를 추방할 수 없어야 한다');
+    assert.ok(views.get(0)?.players.some(player => player.id === tokens[1]));
     assert.equal(onlineViews.get(0)?.find(user => user.id === tokens[4])?.status, 'waiting');
     assert.equal((await send(players[4], 'lobbyChat', { text: '방 안에서는 전송 불가' })).ok, false);
     assert.equal((await send(players[0], 'rps', { gesture: 'rock' })).ok, true);
@@ -116,8 +118,10 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     await waitFor(() => views.get(4) === null);
     assert.equal(server.rooms.has(code), false);
     assert.equal((await send(players[7], 'join', { code })).ok, false);
+    assert.equal((await send(players[7], 'create', { name: '잘못된 비밀번호', mode: '1v1', password: "123\n" })).ok, false);
     const protectedRoom = await send(players[7], 'create', { name: '비밀 초대방', mode: '1v1', password: '4321' });
     assert.equal(protectedRoom.ok, true);
+    assert.equal(JSON.stringify(views.get(7)).includes('4321'), false, '방 비밀번호는 클라이언트 상태에 노출되면 안 된다');
     assert.equal((await send(players[6], 'join', { code: protectedRoom.code })).ok, false);
     assert.equal((await send(players[6], 'join', { code: protectedRoom.code, password: 'wrong' })).ok, false);
     assert.equal((await send(players[7], 'invite', { targetId: tokens[6] })).ok, true);

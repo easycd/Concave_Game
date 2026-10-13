@@ -63,7 +63,7 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
   const cleanPassword = (value: unknown) => { if (typeof value !== 'string' || value.length < 6 || value.length > 72) throw new Error('비밀번호는 6~72자로 입력해주세요.'); return value; };
   const cleanRoomPassword = (value: unknown) => {
     if (value === undefined || value === null || value === '') return null;
-    if (typeof value !== 'string' || value.length < 4 || value.length > 20) throw new Error('방 비밀번호는 4~20자로 입력해주세요.');
+    if (typeof value !== 'string' || value.length < 4 || value.length > 20 || /[\u0000-\u001f\u007f]/.test(value)) throw new Error('방 비밀번호는 제어 문자를 제외한 4~20자로 입력해주세요.');
     return value;
   };
   const cookieName = 'gomoku_session';
@@ -174,6 +174,7 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
     action('kick', data => {
       const room = active();
       if (room.state.hostId !== token) throw new Error('방장만 추방할 수 있습니다.');
+      if (!['lobby', 'finished'].includes(room.state.phase)) throw new Error('대국 진행 중에는 추방할 수 없습니다.');
       const targetId = typeof data?.targetId === 'string' ? data.targetId : '';
       if (!targetId || targetId === token) throw new Error('추방할 사용자를 확인해주세요.');
       const targetPlayer = room.state.players.find(player => player.id === targetId);

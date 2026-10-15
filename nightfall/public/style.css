@@ -13,3 +13,17 @@ body{line-height:1.5}button{min-height:44px;transition:background var(--motion),
 .team{gap:6px}.team-member{row-gap:0;padding-bottom:4px}
 @media(min-width:651px){header{min-height:76px}.shell{padding-top:32px}.panel label{margin-top:14px}.panel .tabs{margin-top:16px}.panel h2{margin-top:16px}.panel .primary{margin-top:18px}}
 @media(max-height:500px){.team-panel{top:110px;width:170px;padding:8px}.team{max-height:30vh}.team-member{font-size:12px}.team-member span{font-size:11px}.interaction{bottom:8px;padding:8px;width:calc(100% - 390px);min-width:250px}.interaction .keys{display:none}.inventory-panel{bottom:98px;width:170px;padding:8px}#minimap{width:100px;height:75px;bottom:8px}.event-log{top:110px;max-width:180px}#chat-window{bottom:8px;width:250px}#chat-messages{height:50px}.chat-hint{display:none}.map-label{display:none}.hud-top{padding:10px}.objective{font-size:12px;min-width:200px;padding:8px}.status-banner,#endgame{top:95px}}
+
+/* Hook danger is a persistent state, with text and shape in addition to colour. */
+.team-member.caged{background:#3b1022f0!important;border:2px solid #ff647d!important;box-shadow:inset 4px 0 #ff647d;padding:12px!important;}.team-member.caged b{color:#fff3f4!important;font-size:14px!important;}.team-member.caged span{color:#ffc0cc!important;font-size:13px!important;font-weight:700;}.team-member.caged i{background:#ff647d!important;}.team-member.caged i:after{content:'!';color:white;display:block;font-size:12px;line-height:14px;text-align:center;}#status-banner:not(:empty){color:#fff0f0;background:#250b17e8;border:1px solid #b84a64;padding:10px 18px;border-radius:5px;font-size:15px;font-weight:700;}#hud .topbar,#hud .sidebar,#hud .interaction{background-color:#0a090fe8;}
+
+#hud .objective,#hud .team-panel,#hud .inventory-panel,#hud .interaction{background:#100e17ed;border-color:#5d515f;}#hud .hud-top{background:linear-gradient(#08070df5,#08070d88,transparent);}#chat-window{background:#100e17df;border-color:#5d515f;}#chat-header{background:#211720;}#chat-send{background:#8d2948;color:#fff2f5;border-color:#b45972;}
+
+/* Gameplay feedback shares a clock with audio; no CSS animation drift. */
+#heartbeat{position:fixed;right:auto;left:50%;top:50%;font-size:24px;line-height:1;color:#e57479;text-shadow:0 0 12px #c7213b;animation:none;pointer-events:none;z-index:19;transform-origin:50% 50%}
+#terror-edge,#hit-overlay{position:fixed;inset:0;pointer-events:none;opacity:0}
+#terror-edge{z-index:17}
+#hit-overlay{z-index:20;background:#d21c32}
+
+.terror-field{position:absolute;inset:0;will-change:opacity}
+#heartbeat,#hit-overlay{will-change:transform,opacity}

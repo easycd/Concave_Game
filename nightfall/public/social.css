@@ -1,6 +1,16 @@
 /* Three distinct lobby views; movement uses opacity and transform only. */
 #lobby .social-shell,#lobby .room-shell {display:grid;max-width:1560px;margin:auto;padding:28px 28px 40px;gap:20px;align-items:start;min-height:calc(100dvh - 168px);}
 #lobby .social-shell {grid-template-columns:minmax(230px,.9fr) minmax(360px,1.8fr) minmax(210px,.85fr);}
+/* Let all three main-lobby panels use the available screen height. */
+@media(min-width:951px){
+#lobby #main-screen {align-items:stretch;min-height:calc(100dvh - 176px);}
+#lobby #main-screen>.panel {display:flex;flex-direction:column;}
+#lobby #main-screen .social-chat {min-height:min(540px,calc(100dvh - 244px));}
+#lobby #main-screen .social-log {height:auto;min-height:180px;max-height:none;flex:1 1 0;}
+#lobby #main-screen .rooms {flex:1 1 0;min-height:120px;max-height:none;}
+#lobby #main-screen .room-tools {flex-shrink:0;}
+#lobby #main-screen .people-list {flex:1 1 0;max-height:none;}
+}
 #lobby .room-shell {grid-template-columns:minmax(220px,.85fr) minmax(440px,1.8fr) minmax(210px,.85fr);}
 #lobby .social-shell>.panel,#lobby .room-shell>.panel {padding:22px;min-width:0;}
 #lobby .social-shell h2,#lobby .room-shell h2 {font-size:21px;letter-spacing:-.5px;}

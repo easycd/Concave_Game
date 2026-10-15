@@ -4,3 +4,6 @@
 #chat-messages{height:100px}
 @media(max-width:650px){#chat-messages{height:80px}}
 @media(max-height:500px){#chat-window{width:250px;bottom:8px}#chat-messages{height:50px}.chat-hint{display:none}}
+
+/* Ruined-forest HUD palette. */
+#chat-window{background:#100e17df;border-color:#5d515f;}#chat-header{background:#211720;}#chat-send{background:#8d2948;color:#fff2f5;border-color:#b45972;}

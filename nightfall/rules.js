@@ -17,3 +17,6 @@ export function campRate(meters,nearbySurvivors,seconds){
   const multiplier=seconds>=20?4:seconds>=10?2:1;
   return Math.max(0,proximity-nearbySurvivors*.333)/40*multiplier;
 }
+
+// Repair pressure rises with completed charges; tools retain their extra check pressure.
+export function repairSkillChance(progress,toolbox=false){return Math.min(.65,.18+.32*clamp(progress,0,1)+(toolbox?.12:0));}

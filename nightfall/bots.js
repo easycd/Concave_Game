@@ -1,8 +1,9 @@
 // Survivor replacement AI. It navigates the same walls as human players.
+import {CONFIG as C} from './config.js';
 export class SurvivorBots{
   constructor(room){this.room=room;this.seed=null;this.paths=new Map();}
   rebuild(){
-    const m=this.room.map;this.seed=m.seed;this.step=40;this.width=Math.ceil(m.width/40);this.height=Math.ceil(m.height/40);this.solid=new Set();
+    const m=this.room.map;this.seed=m.seed;this.paths.clear();this.step=40;this.width=Math.ceil(m.width/40);this.height=Math.ceil(m.height/40);this.solid=new Set();
     for(const w of [...m.walls,...m.windows])for(let y=Math.max(0,Math.floor((w.y-15)/40));y<Math.min(this.height,Math.ceil((w.y+w.h+15)/40));y++)for(let x=Math.max(0,Math.floor((w.x-15)/40));x<Math.min(this.width,Math.ceil((w.x+w.w+15)/40));x++){
       const px=x*40+20,py=y*40+20;
       if(Math.hypot(px-Math.max(w.x,Math.min(w.x+w.w,px)),py-Math.max(w.y,Math.min(w.y+w.h,py)))<15)this.solid.add(y*this.width+x);
@@ -33,7 +34,7 @@ export class SurvivorBots{
       if(t>=zone[0]&&t<=zone[1])p.input.space=true;
     }
     if(p.status==='caged'){p.input.self=p.resolve>=1;return;}
-    if(p.status!=='alive')return;
+    if(!['alive','down'].includes(p.status))return;
     if(p.hidden){p.input.space=!p.previous.space;return;}
     const nearest=list=>list.sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
     const k=[...r.players.values()].find(q=>q.role==='killer');
@@ -41,21 +42,27 @@ export class SurvivorBots{
     const heal=nearest([...r.players.values()].filter(q=>q.id!==p.id&&q.status==='down'));
     let target;
     if(r.map.hatch.visible&&r.map.hatch.open)target=r.map.hatch;
+    else if(p.status==='down')target=nearest(r.map.exits.filter(e=>e.open));
     else if(r.powered()||r.endgame!==null)target=nearest([...r.map.exits]);
     else if(rescue&&(!k||Math.hypot(rescue.x-k.x,rescue.y-k.y)>250))target=rescue;
     else if(heal)target=heal;
-    else target=nearest(r.map.generators.filter(g=>g.progress<90));
+    else target=nearest(r.map.generators.filter(g=>g.progress<C.generatorSeconds));
     if(!target)return;
-    const danger=k&&Math.hypot(p.x-k.x,p.y-k.y)<250;
+    const danger=p.status==='alive'&&k&&Math.hypot(p.x-k.x,p.y-k.y)<250;
+    if(!danger&&p.status==='alive'&&p.deepWound){p.input.work=true;return;}
+    if(!danger&&p.status==='alive'&&p.health===1&&p.itemType==='medkit'&&p.itemCharge>0){p.input.item=true;return;}
     if(danger){
       const pal=r.near(p,r.map.pallets.filter(o=>o.state==='ready'),65);if(pal)p.input.space=true;
       const away={x:p.x+(p.x-k.x)*2,y:p.y+(p.y-k.y)*2};target={x:Math.max(30,Math.min(r.map.width-30,away.x)),y:Math.max(30,Math.min(r.map.height-30,away.y))};
     }
-    if(!danger&&Math.hypot(target.x-p.x,target.y-p.y)<50){p.input.work=true;return;}
+    const arrival=target===r.map.hatch?30:50;
+    if(!danger&&Math.hypot(target.x-p.x,target.y-p.y)<arrival){p.input.work=true;return;}
     let cached=this.paths.get(p.id);
     if(!cached||r.elapsed-cached.time>1||Math.hypot(cached.target.x-target.x,cached.target.y-target.y)>80){cached={target:{...target},time:r.elapsed,path:this.route(p,target)};this.paths.set(p.id,cached);}
     while(cached.path.length&&Math.hypot(cached.path[0].x-p.x,cached.path[0].y-p.y)<12)cached.path.shift();
-    const next=cached.path[0];if(!next)return;
+    // The last grid node can be just outside interaction range. Finish the
+    // short approach instead of idling forever with an empty route.
+    const next=cached.path[0]||target;
     const dx=next.x-p.x,dy=next.y-p.y,d=Math.max(1,Math.hypot(dx,dy));p.input.x=dx/d;p.input.y=dy/d;p.input.run=danger;
   }
 }

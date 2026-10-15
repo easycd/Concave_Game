@@ -45,6 +45,10 @@ export function createSocialLobby({ns,sessions,rooms,join}){
       join(socket,current(socket),r,socket.data.account.nickname);invitations.delete(v.id);refresh();
     });
     sync(socket);
+    if(!current(socket)?.roomCode)for(const v of invitations.values()){
+      const source=sessions.get(v.from),room=rooms.get(v.code),sender=source?.socketId&&ns.sockets.get(source.socketId);
+      if(v.to===socket.data.token&&v.expires>Date.now()&&sender&&source.roomCode===v.code&&room?.phase==='lobby')socket.emit('social:invite',{id:v.id,fromName:nameOf(sender),roomName:room.name,code:room.code,expires:v.expires});
+    }
   }
   return {attach,refresh};
 }

@@ -56,7 +56,7 @@ test('Server enforces the selected rule for both modes and leaves rejected moves
   for (const mode of ['1v1', '2v2'] as const) {
     const room = new GameRoom('RENJU1', '렌주', mode, 'p0', () => 0, 30, 'renju');
     for (let i = 0; i < (mode === '1v1' ? 2 : 4); i++) { room.add(`p${i}`, `사람${i}`); room.ready(`p${i}`); }
-    room.start('p0'); room.choose('p0', 'rock'); room.choose('p1', 'scissors');
+    room.choose('p0', 'rock'); room.choose('p1', 'scissors');
     put(room.state.board, [[6, 7], [8, 7], [7, 6], [7, 8]]);
     const deadline = room.state.deadline;
     assert.throws(() => room.place('p0', 7, 7), /삼삼/);

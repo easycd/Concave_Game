@@ -35,7 +35,6 @@ test('accounts reject duplicate nicknames and wrong passwords, then persist one 
     assert.equal((await send(sockets[1], 'join', { code: created.code })).ok, true);
     await new Promise(resolve => setTimeout(resolve, 70));
     assert.equal((await send(sockets[0], 'ready')).ok, true); await new Promise(resolve => setTimeout(resolve, 70)); assert.equal((await send(sockets[1], 'ready')).ok, true);
-    await new Promise(resolve => setTimeout(resolve, 70)); assert.equal((await send(sockets[0], 'start')).ok, true);
     await new Promise(resolve => setTimeout(resolve, 70)); assert.equal((await send(sockets[0], 'rps', { gesture: 'rock' })).ok, true);
     await new Promise(resolve => setTimeout(resolve, 70)); assert.equal((await send(sockets[1], 'rps', { gesture: 'scissors' })).ok, true);
     await new Promise(resolve => setTimeout(resolve, 70)); assert.equal((await send(sockets[1], 'resign')).ok, true);

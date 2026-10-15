@@ -86,6 +86,17 @@ export default function App() {
     } catch { /* Socket reconnection UI already reports temporary network loss. */ }
   }
   useEffect(() => { if (entered) void refreshAccount(); }, [entered]);
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [entered, room?.code, historyOpen]);
+  useEffect(() => {
+    if (!room?.code) return;
+    const compact = window.matchMedia('(max-width: 900px)');
+    const minimizeForCompactScreen = () => { if (compact.matches) setDirectoryMinimized(true); };
+    minimizeForCompactScreen();
+    compact.addEventListener('change', minimizeForCompactScreen);
+    return () => compact.removeEventListener('change', minimizeForCompactScreen);
+  }, [room?.code]);
 
   function notice(text: string) { setToast(text); if (toastTimer.current) clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(''), 4500); }
   useEffect(() => {
@@ -262,7 +273,6 @@ export default function App() {
   const timeWarning = Boolean(room?.deadline && seconds <= 5 && ['playing', 'rps'].includes(room.phase));
   const activePlayers = room?.players.filter(p => p.seat !== null) ?? [];
   const lobbyUsers = onlineUsers.filter(user => user.location === 'lobby' && user.id !== identity);
-  const allReady = room && seatsFor(room.mode).every(s => activePlayers.some(p => p.seat === s && p.ready && p.connected));
   const currentColor = room?.blackTeam === (room?.currentSeat == null ? null : teamOf(room.currentSeat)) ? 'black' : 'white';
   const turnOrder = room?.blackTeam === 1 ? (room.mode === '2v2' ? [1, 0, 3, 2] : [1, 0]) : room?.mode === '2v2' ? [0, 1, 2, 3] : [0, 1];
 
@@ -278,7 +288,7 @@ export default function App() {
   </div>;
 
   return <div className="app">
-    <header className="app-header"><Brand small onHome={() => void goHome()} /><div className="header-right"><button className="history-button" onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? "게임으로" : `대국 기록 (${records.length})`}</button><span className={`connection ${connected ? '' : 'offline'}`}><span className="live-dot" />{connected ? '실시간 연결' : '재연결 중'}</span><span className="profile-avatar">{nickname.slice(0, 1)}</span><span className="profile-name">{nickname}</span><button className="logout-button" onClick={() => void logout()}><LogOut size={15} /> 로그아웃</button></div></header>
+    <header className="app-header"><Brand small onHome={() => void goHome()} /><div className="header-right"><button className="history-button" aria-label={historyOpen ? "게임으로 돌아가기" : `대국 기록 ${records.length}개 보기`} onClick={() => setHistoryOpen(!historyOpen)}><span className="history-long">{historyOpen ? "게임으로" : `대국 기록 (${records.length})`}</span><span className="history-short">{historyOpen ? "게임" : "기록"}</span></button><span className={`connection ${connected ? '' : 'offline'}`}><span className="live-dot" />{connected ? '실시간 연결' : '재연결 중'}</span><span className="profile-avatar">{nickname.slice(0, 1)}</span><span className="profile-name">{nickname}</span><button className="logout-button" onClick={() => void logout()}><LogOut size={15} /> 로그아웃</button></div></header>
     {!connected && <div className="connection-banner">연결을 다시 시도하고 있습니다. 20초 안에 재연결하면 기존 자리로 돌아옵니다. 대국 시간은 계속 흐릅니다.</div>}
     {historyOpen ? <HistoryPage records={records} onBack={() => setHistoryOpen(false)} /> : !room ? <main className="lobby-page">
       <div className="page-intro"><div><span className="eyebrow">THE LOBBY</span><h1>오늘은 누구와 둘까요?</h1><p>새로운 방을 만들거나, 친구의 방에 들어가세요.</p></div><button className="primary" onClick={() => setCreating(true)} disabled={!connected}><Plus size={18} /> 방 만들기</button></div>
@@ -301,7 +311,7 @@ export default function App() {
         </section>
         <aside className="players-panel">{[0, 1].map(team => <div className={`team-card team-${team}`} key={team}><div className="team-heading"><h2><span className="team-indicator" />{team + 1}팀</h2>{room.blackTeam !== null ? <span className="team-color"><Stone color={room.blackTeam === team ? 'black' : 'white'} small />{room.blackTeam === team ? '흑돌' : '백돌'}</span> : <span className="quiet">{team === 0 ? '플레이어 1' : '플레이어 2'}{room.mode === '2v2' ? ` · ${team === 0 ? 3 : 4}` : ''}</span>}</div>{seatsFor(room.mode).filter(s => teamOf(s) === team).map(seat => { const p = room.players.find(p => p.seat === seat); return <Seat key={seat} player={p} seat={seat} mine={p?.id === identity} host={p?.id === room.hostId} active={room.phase === 'playing' && room.currentSeat === seat} showReady={room.phase === 'lobby'} canJoin={Boolean(canChangeSeat && connected && !pending)} onJoin={() => void send('seat', { seat })} onKick={canKick && p && p.id !== identity ? () => setKickTarget({ id: p.id, nickname: p.nickname }) : undefined} />; })}</div>)}
           <div className="spectator-card"><div className="section-heading"><h3><Eye size={16} /> 관전석</h3><span className="quiet">{room.players.filter(p => p.seat === null).length} / 3</span></div>{room.players.filter(p => p.seat === null).map(p => <div className="spectator" key={p.id}><span className="small-avatar">{p.nickname.slice(0, 1)}</span><span className="spectator-name">{p.nickname}{p.id === identity && <span className="me-tag">나</span>}{!p.connected && <span className="quiet">재연결 중</span>}</span>{canKick && p.id !== identity && <button className="kick-button compact" aria-label={`${p.nickname} 추방`} onClick={() => setKickTarget({ id: p.id, nickname: p.nickname })}><UserMinus size={14} /></button>}</div>)}{canChangeSeat && me?.seat !== null && <button className="spectator-button" disabled={pending || !connected || room.players.filter(p => p.seat === null).length >= 3} onClick={() => void send('seat', { seat: null })}><Plus size={14} /> 관전석으로 이동</button>}{room.players.filter(p => p.seat === null).length === 0 && <p className="quiet spectator-empty">함께 지켜볼 친구를 초대해보세요.</p>}</div>
-          {room.phase === 'lobby' && <div className="ready-actions">{me?.seat !== null && <button className={`ready-button ${me?.ready ? 'is-ready' : ''}`} disabled={pending || !connected} onClick={() => void send('ready')}><Check size={18} />{me?.ready ? '준비 완료 · 취소하기' : '준비 완료'}</button>}{isHost && <button className="primary" disabled={!allReady || pending || !connected} onClick={() => void send('start')}>대국 시작 <ArrowRight size={17} /></button>}<p>{isHost ? '모두 준비되면 대국을 시작할 수 있어요.' : '모두 준비되면 방장이 대국을 시작해요.'}</p></div>}
+          {room.phase === 'lobby' && <div className="ready-actions">{me?.seat !== null && <button className={`ready-button ${me?.ready ? 'is-ready' : ''}`} disabled={pending || !connected} onClick={() => void send('ready')}><Check size={18} />{me?.ready ? '준비 완료 · 취소하기' : '준비 완료'}</button>}<p>모든 플레이어가 준비하면 대국이 자동으로 시작돼요.</p></div>}
           {me?.seat != null && ['rps', 'playing'].includes(room.phase) && <div className="match-actions"><button className="resign-button" onClick={() => setConfirm('resign')} disabled={pending || !connected}><Flag size={15} /> 기권하기</button>{room.phase === 'playing' && <button className="draw-button" disabled={pending || !connected || !!room.drawOffer} onClick={() => void send('drawOffer')}>무승부 신청</button>}</div>}
           {me?.seat != null && room.phase === 'finished' && <div className="match-actions"><button className="rematch-button" disabled={pending || !connected || Boolean(rematchIsMine)} onClick={() => void send('rematch')}>{rematchLabel} {!rematchIsMine && <ArrowRight size={17} />}</button>{room.rematchOffer && <div className="rematch-offer" role="status"><strong>{room.rematchOffer.nickname}님의 한판더 신청</strong><p>{rematchIsMine ? '상대 팀의 수락을 기다리고 있어요.' : '수락하면 준비 화면으로 이동합니다.'}</p></div>}</div>}
           {room.drawOffer && room.phase === 'playing' && <div className="draw-offer" role="status"><strong>{room.drawOffer.team + 1}팀 무승부 신청</strong><p>{room.drawOffer.nickname}님이 신청했습니다.</p><b>{drawSeconds}초 안에 응답</b>{me?.seat != null && teamOf(me.seat) !== room.drawOffer.team ? <div><button disabled={pending || !connected || drawSeconds === 0} onClick={() => void send('drawAnswer', { accept: true })}>수락</button><button disabled={pending || !connected || drawSeconds === 0} onClick={() => void send('drawAnswer', { accept: false })}>거절</button></div> : <p>상대 팀의 수락을 기다리고 있어요.</p>}<small>착수 제한 시간은 계속 흐릅니다.</small></div>}

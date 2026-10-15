@@ -6,7 +6,7 @@ import { createGameServer } from './index.js';
 import { type ChatMessage, type OnlineUser, type Reply, type RoomInvite, type RoomState, type WhisperMessage } from '../src/shared.js';
 
 test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async () => {
-  const server = createGameServer({ allowLegacyAuth: true });
+  const server = createGameServer({ allowLegacyAuth: true, tickIntervalMs: 10_000 });
   await server.ready;
   await new Promise<void>(resolve => server.http.listen(0, '127.0.0.1', resolve));
   const address = server.http.address(); assert.ok(address && typeof address !== 'string');
@@ -55,8 +55,7 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     assert.equal((await send(players[7], 'join', { code, spectator: true })).ok, false);
     assert.equal((await send(players[4], 'ready')).ok, false);
     for (let i = 0; i < 4; i++) assert.equal((await send(players[i], 'ready')).ok, true);
-    assert.equal((await send(players[1], 'start')).ok, false);
-    assert.equal((await send(players[0], 'start')).ok, true);
+    await waitFor(() => views.get(0)?.phase === 'rps');
     await waitFor(() => onlineViews.get(0)?.find(user => user.id === tokens[0])?.status === 'playing');
     assert.equal((await send(players[0], 'kick', { targetId: tokens[1] })).ok, false, '방장은 진행 중인 대국의 상대를 추방할 수 없어야 한다');
     assert.ok(views.get(0)?.players.some(player => player.id === tokens[1]));
@@ -97,7 +96,6 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     assert.equal((await send(players[0], 'reset')).ok, true);
     assert.equal((await send(reconnected, 'join', { code })).ok, true);
     for (const s of [players[0], players[1], reconnected, players[3]]) assert.equal((await send(s, 'ready')).ok, true);
-    assert.equal((await send(players[0], 'start')).ok, true);
     await waitFor(() => views.get(6)?.phase === 'playing');
     assert.equal(views.get(6)?.blackTeam, 1); assert.equal(views.get(6)?.currentSeat, 1);
     assert.equal(views.get(6)?.rpsResult, null); assert.equal(views.get(6)?.moves.length, 0);
@@ -140,5 +138,25 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     const instantLeave = await new Promise<Reply>(resolve => players[7].emit('leave', {}, resolve));
     assert.equal(instantLeave.ok, true);
     assert.equal(server.rooms.has(protectedRoom.code!), false);
+
+    const timingRoom = await send(players[7], 'create', { name: '마감 시점 동기화', mode: '1v1', turnSeconds: 2 });
+    assert.equal(timingRoom.ok, true);
+    assert.equal((await send(players[6], 'join', { code: timingRoom.code })).ok, true);
+    assert.equal((await send(players[7], 'ready')).ok, true);
+    assert.equal((await send(players[6], 'ready')).ok, true);
+    assert.equal((await send(players[7], 'rps', { gesture: 'rock' })).ok, true);
+    assert.equal((await send(players[6], 'rps', { gesture: 'scissors' })).ok, true);
+    await waitFor(() => views.get(6)?.phase === 'playing');
+    assert.equal((await send(players[7], 'drawOffer')).ok, true);
+    const liveRoom = server.rooms.get(timingRoom.code!); assert.ok(liveRoom?.state.drawOffer);
+    liveRoom.state.drawOffer.expiresAt = Date.now() - 1;
+    assert.equal((await send(players[6], 'drawAnswer', { accept: true })).ok, false);
+    await waitFor(() => views.get(7)?.drawOffer === null);
+    liveRoom.state.deadline = Date.now() - 1;
+    assert.equal((await send(players[7], 'move', { x: 7, y: 7 })).ok, false);
+    await waitFor(() => views.get(6)?.phase === 'finished');
+    assert.equal(views.get(6)?.result?.winner, 1);
+    assert.equal((await send(players[6], 'leave')).ok, true);
+    assert.equal((await send(players[7], 'leave')).ok, true);
   } finally { sockets.forEach(s => s.disconnect()); await server.close(); }
 });

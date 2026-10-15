@@ -10,7 +10,7 @@ import { createAccountStore, type AccountStore } from './accounts.js';
 
 const { createNightfall, handleNightfallRequest } = await import(pathToFileURL(path.resolve(process.cwd(), 'nightfall/server.js')).href);
 
-export function createGameServer(options: { accountStore?: AccountStore; allowLegacyAuth?: boolean } = {}) {
+export function createGameServer(options: { accountStore?: AccountStore; allowLegacyAuth?: boolean; tickIntervalMs?: number } = {}) {
   const app = express();
   const http = createServer(app);
   const io = new Server(http, { maxHttpBufferSize: 16_384 });
@@ -110,6 +110,11 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
     if (oldRoom) { oldRoom.player(token).connected = true; socket.join(oldRoom.state.code); broadcast(oldRoom); }
     else { session.room = null; socket.emit('room', null); directory(); }
     const active = () => { const room = session.room && rooms.get(session.room); if (!room) throw new Error('먼저 방에 입장해주세요.'); return room; };
+    const updateActive = (mutate: (room: GameRoom) => void) => {
+      const room = active();
+      try { mutate(room); }
+      finally { broadcast(room); }
+    };
     const leave = () => {
       if (!session.room) return;
       const code = session.room; const room = rooms.get(code); session.room = null; socket.leave(code);
@@ -156,13 +161,13 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
     action('seat', data => { const room = active(); room.switchSeat(token, data?.seat); broadcast(room); });
     action('ready', () => { const room = active(); room.ready(token); broadcast(room); });
     action('start', () => { const room = active(); room.start(token); broadcast(room); });
-    action('rps', data => { const room = active(); room.choose(token, data?.gesture); broadcast(room); });
-    action('move', data => { const room = active(); room.place(token, data?.x, data?.y); broadcast(room); });
-    action('resign', () => { const room = active(); room.resign(token); broadcast(room); });
+    action('rps', data => updateActive(room => room.choose(token, data?.gesture)));
+    action('move', data => updateActive(room => room.place(token, data?.x, data?.y)));
+    action('resign', () => updateActive(room => room.resign(token)));
     action('reset', () => { const room = active(); room.reset(token); broadcast(room); });
     action('rematch', () => { const room = active(); room.requestRematch(token); broadcast(room); });
-    action('drawOffer', () => { const room = active(); room.offerDraw(token); broadcast(room); });
-    action('drawAnswer', data => { const room = active(); room.answerDraw(token, data?.accept); broadcast(room); });
+    action('drawOffer', () => updateActive(room => room.offerDraw(token)));
+    action('drawAnswer', data => updateActive(room => room.answerDraw(token, data?.accept)));
     action('invite', data => {
       const room = active();
       const targetId = typeof data?.targetId === 'string' ? data.targetId : '';
@@ -243,7 +248,7 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
       }
       if (!session.socketId && !session.room && session.disconnectedAt && Date.now() - session.disconnectedAt > 60_000) sessions.delete(id);
     }
-  }, 100);
+  }, options.tickIntervalMs ?? 100);
   interval.unref();
   app.use((req, res, next) => {
     void handleNightfallRequest(req, res).then((handled: boolean) => { if (!handled) next(); }).catch(next);

@@ -49,6 +49,9 @@ export class GameRoom {
     const p = this.player(id);
     if (p.seat === null) throw new Error('관전자는 준비할 수 없습니다.');
     p.ready = !p.ready;
+    if (p.ready && seatsFor(this.state.mode).every(seat => this.state.players.some(player => player.seat === seat && player.ready && player.connected))) {
+      this.start(this.state.hostId);
+    }
   }
   start(id: string) {
     if (id !== this.state.hostId) throw new Error('방장만 시작할 수 있습니다.');

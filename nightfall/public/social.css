@@ -1,0 +1,87 @@
+/* Three distinct lobby views; movement uses opacity and transform only. */
+#lobby .social-shell,#lobby .room-shell {display:grid;max-width:1560px;margin:auto;padding:28px 28px 40px;gap:20px;align-items:start;min-height:calc(100dvh - 168px);}
+#lobby .social-shell {grid-template-columns:minmax(230px,.9fr) minmax(360px,1.8fr) minmax(210px,.85fr);}
+#lobby .room-shell {grid-template-columns:minmax(220px,.85fr) minmax(440px,1.8fr) minmax(210px,.85fr);}
+#lobby .social-shell>.panel,#lobby .room-shell>.panel {padding:22px;min-width:0;}
+#lobby .social-shell h2,#lobby .room-shell h2 {font-size:21px;letter-spacing:-.5px;}
+#lobby .panel-top {display:flex;justify-content:space-between;align-items:center;gap:10px;}
+#lobby .social-shell .eyebrow,#lobby .room-shell .eyebrow {font-size:9px;letter-spacing:1.5px;}
+#lobby .social-shell .muted,#lobby .room-shell .muted {font-size:12px;}
+.view-page:not([hidden]) {animation:page-arrive 340ms cubic-bezier(.2,.7,.2,1) both;}
+@keyframes page-arrive {from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+#lobby[data-view=login] .forest svg {animation:forest-breathe 9s ease-in-out infinite alternate;transform-origin:70% 65%;}
+@keyframes forest-breathe {from{opacity:.8;transform:scale(1)}to{opacity:1;transform:scale(1.025)}}
+.live-dot {font-size:10px;color:#e9bdc7;display:flex;align-items:center;gap:6px;white-space:nowrap;}
+.live-dot::before {content:"";width:5px;height:5px;border-radius:50%;background:#eb778e;box-shadow:0 0 10px #db3456;}
+#lobby .social-chat {display:flex;flex-direction:column;min-height:540px;}
+.social-log {flex:1;min-height:240px;height:calc(100dvh - 400px);max-height:540px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#68404e #121014;margin:16px 0;background:#08080b88;border:1px solid #382a33;border-radius:5px;padding:12px;overflow-wrap:anywhere;}
+.social-message {padding:10px 0;border-bottom:1px solid #ffffff08;animation:message-arrive 180ms ease-out both;}
+@keyframes message-arrive {from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+.social-message>div {display:flex;gap:10px;align-items:baseline;justify-content:space-between;}
+.social-message b {font-size:12px;font-weight:600;color:#f1c1cd;overflow-wrap:anywhere;}
+.social-message time {font-size:10px;color:#b6a6ad;white-space:nowrap;}
+.social-message p {font-size:13px;line-height:1.7;color:#e1d5da;margin:5px 0 0;white-space:pre-wrap;}
+#lobby .social-chat-form {display:flex;gap:8px;align-items:center;margin-top:0;}
+#lobby .social-chat-form input {margin:0;min-width:0;font-size:14px;min-height:44px;padding:10px;}
+#lobby .social-chat-form button {padding:10px;flex-shrink:0;min-height:44px;background:#712238;border-color:#9b3a53;}
+.social-error {min-height:20px;font-size:11px;line-height:1.6;color:#ffacbf;margin:8px 0 0;}
+.social-empty {font-size:12px;color:#b5a7af;line-height:1.8;text-align:center;padding:20px 8px;margin:0;}
+#lobby .online-panel {min-height:320px;}
+.people-list {margin-top:16px;max-height:calc(100dvh - 300px);min-height:140px;overflow:auto;scrollbar-width:thin;}
+.online-person {display:flex;gap:10px;padding:13px 0;align-items:center;border-bottom:1px solid #ffffff0b;min-width:0;}
+.online-avatar {display:grid;place-items:center;flex-shrink:0;width:32px;height:36px;background:#31202b;border:1px solid #754052;border-radius:4px;color:#f3c4d1;font-size:13px;}
+.online-person>div {flex:1;min-width:0;}
+.online-person b {display:block;font-size:12px;font-weight:600;overflow-wrap:anywhere;}
+.online-person small {display:block;font-size:10px;color:#b8a6ae;margin-top:4px;}
+#lobby .online-person button {min-height:36px;font-size:11px;padding:7px 9px;}
+#lobby .room-browser .rooms {max-height:460px;min-height:240px;overflow:auto;margin:10px 0 24px;}
+#lobby .room-browser .rooms-heading {border:0;margin:16px 0 0;padding:0;}
+#lobby .room-browser .room-item {display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:78px;margin:8px 0;padding:16px;border-left:3px solid #a63753;transition:background 160ms,border-color 160ms,transform 160ms;}
+#lobby .room-browser .room-item:hover:not(:disabled) {transform:translateX(3px);background:#3d202e;}
+#lobby .room-browser .room-item>span {font-size:15px;line-height:1.5;text-align:left;}
+#lobby .room-browser .room-item small {font-size:11px;}
+#lobby .room-tools {border-top:1px solid #49303d;padding-top:16px;}
+#lobby .room-tools>summary {cursor:pointer;list-style:none;padding:14px 16px;border:1px solid #aa3852;background:#a8213b;color:white;border-radius:4px;font-size:14px;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+#lobby .room-tools>summary::-webkit-details-marker {display:none;}
+#lobby .room-tools>summary:hover {background:#c02b48;}
+#lobby .room-tools[open]>summary span {transform:rotate(45deg);}
+#lobby .faction-grid {display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:12px;margin-top:18px;}
+.faction {display:flex;flex-direction:column;min-width:0;background:#0b0b0e;border:1px solid #45333f;border-radius:5px;padding:12px;transition:border-color 160ms,background 160ms;}
+.waiting-faction {grid-row:span 2;background:#15131a;border-color:#4c4255;}
+.killer-faction {background:linear-gradient(135deg,#35121e,#100c10);border-color:#823048;}
+.survivor-faction {background:linear-gradient(135deg,#17252b,#0e1116);border-color:#3e616d;}
+.faction-heading {display:flex;align-items:center;gap:8px;margin-bottom:12px;}
+.faction-heading h3 {font-size:15px;margin:0;font-weight:650;}
+.faction-heading>span:last-child {margin-left:auto;font-size:10px;color:#bfacb5;}
+.faction-mark {display:grid;place-items:center;width:26px;height:26px;background:#ffffff08;color:#e9bdca;font-size:14px;}
+.killer-faction h3 {color:#ffa4b7;}.survivor-faction h3 {color:#b4dce7;}
+.faction-players {flex:1;min-height:76px;}
+.waiting-faction .faction-players {min-height:200px;}
+.faction-player {display:flex;gap:10px;align-items:center;border:1px solid #ffffff0d;border-radius:4px;background:#ffffff04;padding:10px;margin-bottom:8px;min-width:0;}
+.faction-player>div {min-width:0;flex:1;}
+.faction-player b {display:block;font-size:12px;font-weight:600;overflow-wrap:anywhere;}
+.faction-player small {display:block;font-size:10px;color:#bbaab3;line-height:1.6;margin-top:3px;}
+.faction-player.is-self {border-color:#d87894;background:#d16a8610;cursor:grab;}
+.faction-player.dragging {opacity:.45;cursor:grabbing;}
+.faction.drop-hover {border-color:#ffbdd0;background:#65233e;outline:2px solid #ffbdd0;outline-offset:2px;}
+.player-portrait {position:relative;flex-shrink:0;width:26px;height:38px;--outfit:#6b5662;}
+.player-portrait::before {content:"";position:absolute;width:13px;height:13px;border-radius:50%;top:0;left:7px;background:#c7b2a7;}
+.player-portrait::after {content:"";position:absolute;width:24px;height:22px;border-radius:7px 7px 3px 3px;bottom:0;left:1px;background:var(--outfit);border:1px solid #d9c0cc88;}
+.player-portrait.killer::before {border-radius:3px;background:#e3d8be;}
+#lobby .faction>button {margin-top:12px;font-size:11px;min-height:40px;padding:8px;}
+#lobby .killer-faction>button {background:#582032;border-color:#9c3c58;}
+#lobby .survivor-faction>button {background:#203b46;border-color:#416775;color:#d5ecf5;}
+#lobby .trial-lobby .invite {padding:10px;margin-top:16px;}
+#lobby .trial-lobby .loadout {margin:18px 0 14px;}
+#lobby .trial-lobby .primary {width:100%;justify-content:space-between;display:flex;margin-top:12px;}
+#lobby .trial-lobby #start-hint {margin-top:12px;}
+#lobby>#wardrobe {position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:25;width:min(480px,calc(100% - 32px));max-height:88dvh;overflow:auto;box-shadow:0 0 0 100vmax #050407ec,0 20px 60px black;}
+.incoming-invites {position:fixed;z-index:28;right:24px;bottom:24px;width:min(340px,calc(100% - 32px));display:grid;gap:10px;}
+.incoming-invites article {background:#25131e;border:1px solid #d26786;border-radius:6px;padding:18px;box-shadow:0 16px 50px #0009;animation:page-arrive 250ms ease-out both;}
+.incoming-invites b {font-size:14px;color:#ffe3ec;}.incoming-invites p {font-size:12px;color:#d2bbc5;overflow-wrap:anywhere;}
+.invitation-actions {display:flex;gap:8px;}.invitation-actions button {flex:1;}
+.sr-only {position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important;}
+@media(max-width:1150px){#lobby .social-shell,#lobby .room-shell {padding:20px;gap:14px;grid-template-columns:220px minmax(330px,1fr) 210px;}#lobby .social-shell>.panel,#lobby .room-shell>.panel {padding:16px;}.faction-grid {gap:8px;}.faction {padding:9px;}}
+@media(max-width:950px){#lobby .social-shell,#lobby .room-shell {grid-template-columns:minmax(0,1fr) minmax(0,1.6fr);}#lobby .online-panel {grid-column:1/-1;min-height:0;}.people-list {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 16px;max-height:200px;min-height:0;}#lobby .social-shell h2,#lobby .room-shell h2 {font-size:19px;}.faction-grid {grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr)!important;}.waiting-faction {grid-row:span 2;}.waiting-faction .faction-players {min-height:60px;}}
+@media(max-width:650px){#lobby .social-shell,#lobby .room-shell {grid-template-columns:minmax(0,1fr);padding:20px 16px;gap:20px;}#lobby .social-shell>.room-browser,#lobby .room-shell>.trial-lobby {grid-row:1;}#lobby .social-chat {min-height:340px;}.social-log {height:240px;min-height:180px;max-height:300px;}.people-list {grid-template-columns:minmax(0,1fr);max-height:260px;}#lobby .social-chat-form input {font-size:16px;}#lobby .room-browser .rooms {min-height:100px;max-height:320px;}#lobby .room-browser .room-item {flex-wrap:wrap;gap:6px;}#lobby .room-browser .room-item small {white-space:normal;}#lobby .faction-grid {grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr)!important;}.waiting-faction {grid-row:span 2;}.faction-player {flex-wrap:wrap;gap:6px;padding:8px;}.faction-player small {font-size:10px;}.faction-heading {gap:5px;flex-wrap:wrap;}.faction-heading h3 {font-size:13px;}.faction-heading>span:last-child {margin-left:0;}#lobby .faction>button {font-size:11px;}#lobby .trial-lobby .invite b {font-size:20px;}.incoming-invites {right:16px;bottom:16px;}}
+@media(prefers-reduced-motion:reduce){#lobby .view-page,#lobby .forest svg,#lobby .social-message,#lobby .incoming-invites article {animation:none!important;}#lobby .room-item:hover:not(:disabled) {transform:none!important;}}

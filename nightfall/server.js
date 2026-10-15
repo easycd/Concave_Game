@@ -7,6 +7,7 @@ import { Server } from 'socket.io';
 import { Room, distance, lineOfSight } from './game.js';
 import { CONFIG as C } from './config.js';
 import { createIdentityStore, credentials, readSession, sessionCookie, DEFAULT_COLORS } from './accounts.js';
+import { createSocialLobby } from './social.js';
 const identityContexts=new WeakMap();
 
 const root=path.dirname(fileURLToPath(import.meta.url));
@@ -26,7 +27,12 @@ export function createNightfall(io,options={}) {
   const chats=new WeakMap();
   const channelFor=(room,p)=>p?.role==='survivor'&&['playing','finished'].includes(room.phase)?(p.status==='out'?'dead':'survivors'):null;
   const directory=()=>[...rooms.values()].map(r=>({code:r.code,name:r.name,count:r.players.size,max:r.maxPlayers,phase:r.phase}));
-  const sendDirectory=()=>ns.emit('directory',directory());
+  const social=createSocialLobby({ns,sessions,rooms,join:joinRoom});
+  const sendDirectory=()=>{ns.emit('directory',directory());social.refresh();};
+  function joinRoom(socket,session,room,nickname){
+    if(session.roomCode)throw new Error('현재 방에서 먼저 나가주세요.');
+    const p=room.addPlayer(socket.data.account?.nickname||nickname,'waiting');p.accountId=socket.data.account?.id||null;p.cosmetics={...DEFAULT_COLORS,...socket.data.profile};session.roomCode=room.code;session.playerId=p.id;socket.emit('identity',p.id);broadcast(room,true);sendDirectory();
+  }
   function sendRoom(socket,room,full=false) {
     if(!room)return;
     const session=sessions.get(socket.data.token), own=room.players.get(session?.playerId);
@@ -88,6 +94,7 @@ export function createNightfall(io,options={}) {
     if(session?.socketId)ns.sockets.get(session.socketId)?.disconnect(true);
     session??={roomCode:null,playerId:null,socketId:null,disconnectedAt:null,lastAction:0};
     session.socketId=socket.id;session.disconnectedAt=null;sessions.set(token,session);
+    social.attach(socket);
     if(socket.data.account)socket.emit('account',{...socket.data.account,...socket.data.profile});
     socket.emit('directory',directory());
     const previous=rooms.get(session.roomCode),p=previous?.players.get(session.playerId);
@@ -98,9 +105,9 @@ export function createNightfall(io,options={}) {
       if(session.roomCode)throw new Error('현재 방에서 먼저 나가주세요.');if(rooms.size>=50)throw new Error('현재 생성 가능한 방이 모두 찼습니다.');
       const name=clean(data?.name,24),nickname=socket.data.account?.nickname||clean(data?.nickname,12),max=Number(data?.maxPlayers??C.defaultPlayers);if(!Number.isInteger(max)||max<3||max>C.maxPlayers)throw new Error('정원은 3~16명입니다.');
       let code;do{code=randomBytes(3).toString('hex').toUpperCase();}while(rooms.has(code));
-      const room=new Room(code,name,max),p=room.addPlayer(nickname);rooms.set(code,room);p.accountId=socket.data.account?.id||null;p.cosmetics={...DEFAULT_COLORS,...socket.data.profile};session.roomCode=code;session.playerId=p.id;socket.emit('identity',p.id);broadcast(room,true);sendDirectory();
+      const room=new Room(code,name,max),p=room.addPlayer(nickname,'waiting');rooms.set(code,room);p.accountId=socket.data.account?.id||null;p.cosmetics={...DEFAULT_COLORS,...socket.data.profile};session.roomCode=code;session.playerId=p.id;socket.emit('identity',p.id);broadcast(room,true);sendDirectory();
     });
-    action('join',data=>{if(session.roomCode)throw new Error('현재 방에서 먼저 나가주세요.');const code=clean(data?.code,6).toUpperCase(),room=rooms.get(code);if(!room)throw new Error('방 코드를 확인해주세요.');const p=room.addPlayer(socket.data.account?.nickname||clean(data?.nickname,12));p.accountId=socket.data.account?.id||null;p.cosmetics={...DEFAULT_COLORS,...socket.data.profile};session.roomCode=code;session.playerId=p.id;socket.emit('identity',p.id);broadcast(room,true);sendDirectory();});
+    action('join',data=>{const code=clean(data?.code,6).toUpperCase(),room=rooms.get(code);if(!room)throw new Error('방 코드를 확인해주세요.');joinRoom(socket,session,room,socket.data.account?.nickname||clean(data?.nickname,12));});
     action('debug-view',data=>{const r=active(),p=r.players.get(session.playerId);if(p?.name!=='admin')throw new Error('admin 플레이어만 디버깅 모드를 사용할 수 있습니다.');if(typeof data?.fullMap!=='boolean')throw new Error('맵 보기 값이 올바르지 않습니다.');session.debugFullMap=data.fullMap;sendRoom(socket,r,true);});
     socket.on('debug-ping',ack=>{if(session.socketId===socket.id&&rooms.get(session.roomCode)?.players.get(session.playerId)?.name==='admin'&&typeof ack==='function')ack({ok:true});});
     action('profile:set',async data=>{
@@ -118,7 +125,8 @@ export function createNightfall(io,options={}) {
     action('reset',()=>{const r=active();r.reset(session.playerId);broadcast(r,true);sendDirectory();});
     action('leave',()=>{leave(session);socket.emit('state',null);});
     action('input',data=>{const r=active(),p=r.players.get(session.playerId);if(!p)return;const old=p.input;const axis=v=>Number.isFinite(v)?Math.max(-1,Math.min(1,v)):0;const ax=axis(data?.aimX),ay=axis(data?.aimY),len=Math.hypot(ax,ay);p.input={x:axis(data?.x),y:axis(data?.y),aimX:len?ax/len:1,aimY:len?ay/len:0};for(const key of ['space','work','run','crouch','attack','item','self','drop']){p.input[key]=data?.[key]===true;if(['space','attack','self','drop'].includes(key)&&p.input[key]&&!old[key])p.pendingPress.add(key);}});
-    socket.on('disconnect',()=>{if(session.socketId!==socket.id)return;session.socketId=null;session.disconnectedAt=Date.now();const r=rooms.get(session.roomCode),p=r?.players.get(session.playerId);if(p){p.connected=false;p.input={x:0,y:0,space:false};if(r.hostId===p.id)r.hostId=[...r.players.values()].find(q=>q.connected)?.id||p.id;broadcast(r,true);}});
+    socket.on('disconnect',()=>{if(session.socketId!==socket.id)return;session.socketId=null;session.disconnectedAt=Date.now();const r=rooms.get(session.roomCode),p=r?.players.get(session.playerId);if(p){p.connected=false;p.input={x:0,y:0,space:false};if(r.hostId===p.id)r.hostId=[...r.players.values()].find(q=>q.connected)?.id||p.id;broadcast(r,true);}sendDirectory();});
+    sendDirectory();
   });
   let ticks=0,last=performance.now();
   const timer=setInterval(()=>{
@@ -183,7 +191,7 @@ export async function handleNightfallRequest(req,res,base='/dbd') {
   if(url.pathname===base){res.writeHead(302,{Location:`${base}/`});res.end();return true;}
   if(!url.pathname.startsWith(`${base}/`))return false;
   const file=url.pathname.slice(base.length+1)||'index.html';
-  if(!['index.html','account.js','account.css','lobby.css','app.js','scene.js','skill-check.js','audio.js','style.css','debug.js','debug.css','chat.js','chat.css'].includes(file)){res.writeHead(404);res.end('Not found');return true;}
+  if(!['index.html','account.js','account.css','lobby.css','social.js','social.css','app.js','scene.js','skill-check.js','audio.js','style.css','debug.js','debug.css','chat.js','chat.css'].includes(file)){res.writeHead(404);res.end('Not found');return true;}
   try {const body=await readFile(path.join(root,'public',file));res.writeHead(200,{'Content-Type':file.endsWith('.js')?'text/javascript; charset=utf-8':file.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'});res.end(body);}catch{res.writeHead(500);res.end('Game assets unavailable');}return true;
 }
 export function createStandaloneServer(options={}){const http=createServer(async(req,res)=>{if(await handleNightfallRequest(req,res))return;if(req.url==='/'){res.writeHead(302,{Location:'/dbd/'});res.end();}else{res.writeHead(404);res.end();}});const io=new Server(http,{maxHttpBufferSize:16384});const game=createNightfall(io,options);return {http,io,game,close:async()=>{await game.close();await new Promise(resolve=>io.close(resolve));}};}

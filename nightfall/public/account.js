@@ -1,4 +1,4 @@
-export function createAccountUI({socket,getState,onAccount,onLogout}){
+export function createAccountUI({socket,getState,onAccount,onLogout,onViewChange}){
   const $=id=>document.getElementById(id);let account=null,register=false,wardrobe=false,busy=false;
   const defaults={survivorColor:'#657f62',killerColor:'#643e37'};
   const message=(id,text,error=false)=>{const el=$(id);el.textContent=text;el.classList.toggle('error',error);};
@@ -14,6 +14,8 @@ export function createAccountUI({socket,getState,onAccount,onLogout}){
     $('entry').hidden=!account||wardrobe||!!s;
     if(s?.phase==='lobby')$('waiting').hidden=wardrobe;
     $('wardrobe-open').disabled=!!playing;
+    $('login-screen').hidden=!!account; $('main-screen').hidden=!account||!!s||wardrobe; $('room-screen').hidden=!account||s?.phase!=='lobby'||wardrobe;
+    $('lobby').dataset.view=!account?'login':wardrobe?'wardrobe':s?'room':'main';onViewChange?.();
     if(!account){$('connection').textContent='● 로그인 후 연결';$('connection').dataset.status='idle';}
   }
   function renderPreview(){
@@ -46,6 +48,15 @@ export function createAccountUI({socket,getState,onAccount,onLogout}){
   };
   $('wardrobe-open').onclick=()=>{wardrobe=true;sync();$('wardrobe-close').focus();};
   $('wardrobe-close').onclick=()=>{wardrobe=false;if(account){$('survivor-color').value=account.survivorColor;$('killer-color').value=account.killerColor;renderPreview();}sync();$('wardrobe-open').focus();};
+  document.addEventListener('keydown',e=>{
+    if(!wardrobe||$('wardrobe').hidden)return;
+    if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();$('wardrobe-close').click();return;}
+    if(e.key!=='Tab')return;
+    const controls=[...$('wardrobe').querySelectorAll('button,input,select,[tabindex]')].filter(el=>!el.disabled&&el.tabIndex>=0&&el.getClientRects().length);
+    const first=controls[0],last=controls.at(-1);
+    if(e.shiftKey&&(document.activeElement===first||!$('wardrobe').contains(document.activeElement))){e.preventDefault();last?.focus();}
+    else if(!e.shiftKey&&(document.activeElement===last||!$('wardrobe').contains(document.activeElement))){e.preventDefault();first?.focus();}
+  },true);
   for(const id of ['survivor-color','killer-color'])$(id).oninput=()=>{renderPreview();message('color-message','미리보기 · 내 계정에 저장을 눌러 적용하세요.');};
   for(const [color,name]of [['#657f62','이끼'],['#9d5853','붉은 벽돌'],['#567f95','밤바다'],['#8e6f9e','안개 보라'],['#c09b53','황금빛'],['#b7bbac','은빛']]){
     const button=document.createElement('button'),swatch=document.createElement('i');button.type='button';button.dataset.color=color;button.setAttribute('aria-label','생존자 '+name);button.setAttribute('aria-pressed','false');swatch.style.backgroundColor=color;swatch.setAttribute('aria-hidden','true');button.append(swatch);button.onclick=()=>{$('survivor-color').value=color;renderPreview();message('color-message','미리보기 · 내 계정에 저장을 눌러 적용하세요.');};$('color-swatches').append(button);
@@ -57,6 +68,7 @@ export function createAccountUI({socket,getState,onAccount,onLogout}){
     socket.timeout(10000).emit('profile:set',{survivorColor:$('survivor-color').value,killerColor:$('killer-color').value},(err,r)=>{$('color-save').disabled=false;message('color-message',err?'저장 응답이 지연됩니다. 다시 확인해주세요.':r?.ok?'계정에 저장했습니다. 다음 로그인에도 유지됩니다.':r?.error||'저장에 실패했습니다.',!!err||!r?.ok);});
   };
   socket.on('account',apply);
+  socket.on('disconnect',reason=>{if(reason!=='io server disconnect')return;wardrobe=false;apply(null);onLogout();message('auth-message','접속이 종료되었습니다. 다른 창에서 로그인했거나 세션이 만료되었을 수 있습니다. 다시 로그인해주세요.',true);});
   socket.on('connect_error',e=>{if(e.message==='로그인이 필요합니다.'){socket.disconnect();apply(null);onLogout();message('auth-message','로그인이 만료됐습니다. 다시 로그인해주세요.',true);}});
   async function init(){try{const response=await fetch('./api/me',{credentials:'same-origin',cache:'no-store'}),data=await response.json();if(response.ok&&data.account){apply(data.account);socket.connect();$('entry-heading').focus({preventScroll:true});window.scrollTo(0,0);}else message('auth-message',response.status===401?'':data.error||'계정을 확인할 수 없습니다.',response.status!==401);}catch{message('auth-message','서버 연결을 확인한 뒤 다시 시도해주세요.',true);}finally{$('auth-submit').disabled=false;sync();}}
   renderPreview();void init();return {sync,get account(){return account;}};

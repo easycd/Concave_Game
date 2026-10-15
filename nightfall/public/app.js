@@ -2,6 +2,7 @@ import { createDebugger } from './debug.js';
 import { createChat } from './chat.js';
 import { createScene } from './scene.js';
 import { createAccountUI } from './account.js';
+import { createLobbyUI } from './social.js';
 import { createAudio } from './audio.js';
 const $=id=>document.getElementById(id), canvas=$('game'),ctx=canvas.getContext('2d'),mini=$('minimap'),mc=mini.getContext('2d');
 let token=sessionStorage.getItem('nightfall-token');if(!token){token=crypto.randomUUID();sessionStorage.setItem('nightfall-token',token);}
@@ -12,8 +13,10 @@ const statusText={alive:'생존',down:'빈사',carried:'운반 중',caged:'갈�
 const debug=createDebugger({canvas,getState:()=>state,getMyId:()=>myId,socket,notify:toast,clearInput});
 const chat=createChat({socket,clearInput,getState:()=>state});
 $('nickname').readOnly=true;
-const accountUI=createAccountUI({socket,getState:()=>state,onAccount:account=>{if(account)$('nickname').value=account.nickname;},onLogout:()=>applyState(null)});
-const invited=new URLSearchParams(location.search).get('room');if(invited){$('join-code').value=invited.toUpperCase();tab(false);}
+let socialUI;
+const accountUI=createAccountUI({socket,getState:()=>state,onAccount:account=>{if(account)$('nickname').value=account.nickname;},onLogout:()=>applyState(null),onViewChange:()=>socialUI?.update()});
+socialUI=createLobbyUI({socket,getState:()=>state,getAccount:()=>accountUI.account,notify:toast,clearInput});
+const invited=new URLSearchParams(location.search).get('room');if(invited){$('join-code').value=invited.toUpperCase();$('room-tools').open=true;tab(false);}
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('toast').hidden=true,3800);}
 function send(event,data={}){if(!socket.connected){toast('서버에 연결한 뒤 다시 시도해주세요.');return;}const button=event==='create'?$('create-form').querySelector('button'):event==='join'?$('join-form').querySelector('button'):null;if(button?.disabled)return;const label=button?.innerHTML;if(button){button.disabled=true;button.textContent='입장 중…';}socket.timeout(5000).emit(event,data,(err,reply)=>{if(button){button.disabled=false;button.innerHTML=label;}if(err)toast('응답이 지연되고 있습니다. 다시 시도해주세요.');else if(!reply?.ok)toast(reply?.error||'요청에 실패했습니다.');});}
 function nickname(){const n=$('nickname').value.trim();if(!n){toast('플레이어 이름을 입력해주세요.');$('nickname').focus();return null;}localStorage.setItem('nightfall-name',n);return n;}
@@ -29,11 +32,11 @@ function guide(open){if(open&&!guideOpen)guideReturnFocus=document.activeElement
 for(const id of ['help','game-help'])$(id).onclick=()=>guide(true);for(const id of ['close-guide','guide-ok'])$(id).onclick=()=>guide(false);
 addEventListener('keydown',e=>{if(!guideOpen||e.code!=='Tab')return;const controls=[...$('guide').querySelectorAll('button,a,input,select,[tabindex="0"]')].filter(el=>!el.disabled),first=controls[0],last=controls.at(-1);if(e.shiftKey&&(document.activeElement===first||document.activeElement===$('guide-title'))){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}});
 socket.on('connect',()=>{$('connection').textContent='● 서버 연결됨';$('connection').dataset.status='online';$('connection-warning').hidden=true;});
-socket.on('disconnect',()=>{clearInput();$('connection').textContent='● 재접속 중';$('connection').dataset.status='offline';$('connection-warning').hidden=!state;});
+socket.on('disconnect',()=>{clearInput();$('connection').textContent='● 재접속 중';$('connection').dataset.status='offline';$('connection-warning').hidden=!state;if(state)updateUi();if(!accountUI.account)accountUI.sync();});
 socket.on('connect_error',e=>toast(`연결 실패: ${e.message}`));socket.on('identity',id=>myId=id);
 socket.on('directory',rooms=>{
-  $('rooms').replaceChildren();const available=rooms.filter(r=>r.phase==='lobby');if(!available.length){const p=document.createElement('p');p.className='muted';p.textContent='아직 열린 방이 없습니다. 첫 번째 추격을 만들어보세요.';$('rooms').append(p);}
-  for(const r of available){const b=document.createElement('button');b.className='room-item';const name=document.createElement('span'),count=document.createElement('small');name.textContent=r.name;count.textContent=`${r.count}/${r.max}명  ↗`;b.append(name,count);b.disabled=r.count>=r.max;b.onclick=()=>{const n=nickname();if(n)send('join',{code:r.code,nickname:n});};$('rooms').append(b);}
+  $('rooms').replaceChildren();const available=rooms;$('room-total').textContent='방 '+rooms.length+'개';if(!available.length){const p=document.createElement('p');p.className='muted';p.textContent='아직 열린 방이 없습니다. 첫 번째 추격을 만들어보세요.';$('rooms').append(p);}
+  for(const r of available){const b=document.createElement('button');b.className='room-item';const name=document.createElement('span'),count=document.createElement('small');name.textContent=r.name;count.textContent=`${r.count}/${r.max}명 · ${r.phase==='lobby'?'입장 가능':'경기 중'}`;b.append(name,count);b.disabled=r.count>=r.max||r.phase!=='lobby';b.onclick=()=>{const n=nickname();if(n)send('join',{code:r.code,nickname:n});};$('rooms').append(b);}
 });
 socket.on('state',applyState);
 function applyState(next){
@@ -47,12 +50,10 @@ function applyState(next){
 function updateUi(){
   const own=state.players.find(p=>p.id===myId);if(!own)return;
   if(state.phase==='lobby'){
-    updateLoadout(own);$('waiting-title').textContent=state.name;$('room-code').textContent=state.code;$('roster-count').textContent=`${state.players.length} / ${state.maxPlayers}명`;$('start').disabled=myId!==state.hostId||state.players.filter(p=>p.role==='survivor'&&p.connected).length<2||state.players.filter(p=>p.role==='killer'&&p.connected).length!==1;
-    const survivors=state.players.filter(p=>p.role==='survivor'&&p.connected).length;$('start-hint').textContent=myId!==state.hostId?'방장이 추격을 시작하기를 기다리는 중입니다.':survivors<2?`생존자 ${2-survivors}명이 더 입장하면 시작할 수 있습니다.`:'준비 완료 · 방장이 추격을 시작할 수 있습니다.';
+    updateLoadout(own);$('waiting-title').textContent=state.name;$('room-code').textContent=state.code;$('roster-count').textContent=`${state.players.length} / ${state.maxPlayers}명`;$('start').disabled=!socket.connected||myId!==state.hostId||state.players.filter(p=>p.role==='survivor'&&p.connected).length<2||state.players.filter(p=>p.role==='killer'&&p.connected).length!==1||state.players.some(p=>p.role==='waiting'||!p.connected);
+    const waiting=state.players.filter(p=>p.role==='waiting').length,survivors=state.players.filter(p=>p.role==='survivor'&&p.connected).length;$('start-hint').textContent=!socket.connected?'서버에 다시 연결한 뒤 시작할 수 있습니다.':state.players.some(p=>!p.connected)?'재접속 중인 참가자를 기다리고 있습니다.':myId!==state.hostId?'방장이 추격을 시작하기를 기다리는 중입니다.':waiting?`대기 중인 ${waiting}명이 진영을 선택해야 합니다.`:!state.players.some(p=>p.role==='killer'&&p.connected)?'살인마 1명이 필요합니다.':survivors<2?`생존자 ${2-survivors}명이 더 입장하면 시작할 수 있습니다.`:'준비 완료 · 방장이 추격을 시작할 수 있습니다.';
     $('choose-killer').classList.toggle('active',own.role==='killer');$('choose-survivor').classList.toggle('active',own.role==='survivor');
     $('choose-killer').setAttribute('aria-pressed',String(own.role==='killer'));$('choose-survivor').setAttribute('aria-pressed',String(own.role==='survivor'));
-    const signature=JSON.stringify(state.players.map(p=>[p.id,p.role,p.connected]))+state.hostId;
-    if(lastRoster!==signature){lastRoster=signature;$('roster').replaceChildren();for(const p of state.players){const row=document.createElement('div');row.className='player-row';const avatar=document.createElement('span');avatar.className=`avatar ${p.role}`;avatar.textContent=p.role==='killer'?'✕':'◇';const name=document.createElement('span');name.textContent=p.name+(p.id===myId?' (나)':'');const meta=document.createElement('span');meta.className='meta';meta.textContent=`${p.id===state.hostId?'방장 · ':''}${p.connected?(p.role==='killer'?'살인마':'생존자'):'재접속 중'}`;row.append(avatar,name,meta);$('roster').append(row);}}
     $('result').hidden=true;return;
   }
   const remainingPlayers=state.players.filter(p=>p.role==='survivor'&&!['out','escaped'].includes(p.status));
@@ -73,9 +74,10 @@ function updateUi(){
   $('action-track').setAttribute('aria-valuenow',String(Math.min(100,Math.round((own.action?.progress||0)*100))));
   const events=state.events.filter(e=>state.elapsed-e.time<7).slice(-4);const signature=events.map(e=>e.id).join();if(signature!==lastEvents){lastEvents=signature;$('event-log').replaceChildren(...events.map(e=>{const div=document.createElement('div');div.textContent=e.text;return div;}));}
   $('result').hidden=state.phase!=='finished';
+  if(state.phase==='finished'){$('reset').disabled=!socket.connected||myId!==state.hostId;$('reset').textContent=myId===state.hostId?'대기실로 돌아가기':'방장이 대기실로 돌아가기를 기다리는 중';}
   if(state.phase==='finished'&&!lastResult){lastResult=state.code;$('result-title').textContent='추격이 종료되었습니다';$('result-description').textContent=`${state.result.reason} · ${state.result.escaped}명 탈출`;$('reset').disabled=myId!==state.hostId;$('reset').textContent=myId===state.hostId?'대기실로 돌아가기':'방장이 대기실로 돌아가기를 기다리는 중';$('result-players').replaceChildren(...state.players.map(p=>{const row=document.createElement('div');row.className='result-row';const n=document.createElement('b'),s=document.createElement('span');n.textContent=p.name;s.textContent=p.role==='killer'?'살인마':statusText[p.status];row.append(n,s);return row;}));}
 }
-function updateLoadout(own){if(loadoutRole===own.role)return;loadoutRole=own.role;$('item-select').disabled=own.role==='killer';$('item-select').value=own.role==='killer'?'none':own.itemType;$('perk-options').replaceChildren();for(const [key,p]of Object.entries(state.perks||{})){if(p.role!==own.role)continue;const label=document.createElement('label'),box=document.createElement('input'),span=document.createElement('span');box.type='checkbox';box.value=key;box.checked=own.perks.includes(key);span.textContent=p.name+' · '+p.description;label.append(box,span);$('perk-options').append(label);}}
+function updateLoadout(own){if(loadoutRole===own.role)return;loadoutRole=own.role;$('item-select').disabled=own.role!=='survivor';$('save-loadout').disabled=own.role==='waiting';$('item-select').value=own.role==='killer'?'none':own.itemType;$('perk-options').replaceChildren();for(const [key,p]of Object.entries(state.perks||{})){if(p.role!==own.role)continue;const label=document.createElement('label'),box=document.createElement('input'),span=document.createElement('span');box.type='checkbox';box.value=key;box.checked=own.perks.includes(key);span.textContent=p.name+' · '+p.description;label.append(box,span);$('perk-options').append(label);}}
 $('save-loadout').onclick=()=>{if(!socket.connected)return;socket.timeout(5000).emit('loadout',{item:$('item-select').value,perks:[...$('perk-options').querySelectorAll('input:checked')].map(e=>e.value)},(err,r)=>toast(!err&&r?.ok?'장비와 특전을 적용했습니다.':r?.error||'장비 적용에 실패했습니다.'));};
 $('game-surrender').onclick=()=>socket.timeout(5000).emit('end-trial',{},(err,r)=>{if(err||!r?.ok)toast(r?.error||'경기 종료에 실패했습니다.');});
 function contextHint(p){if(p.status!=='alive')return '';if(p.hidden)return 'SPACE · 캐비넷에서 나오기';return p.role==='killer'?(p.carrying?'갈고리로 운반 · E 걸기 · F 내려놓기':'마우스로 조준 · 왼쪽 클릭으로 공격'):'E를 길게 눌러 작업 · 달리면 흔적이 남습니다';}

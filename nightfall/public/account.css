@@ -1,0 +1,9 @@
+#account-bar{position:relative;z-index:20;display:flex;align-items:center;justify-content:flex-end;gap:12px;background:#151f18;border-bottom:1px solid var(--line);padding:9px max(24px,5%);font-size:13px;color:#d5dfca;flex-wrap:wrap}
+#account-bar button{padding:8px 12px;min-height:36px;font-size:12px}
+.password-field{display:flex;gap:8px;align-items:center;margin-top:9px}.password-field input{margin:0;min-width:0}.password-field button{flex-shrink:0;min-height:44px}
+.form-message{min-height:24px;line-height:1.6;font-size:13px;color:#ced9bc;margin:18px 0 0}.form-message.error{color:#ffb5a4}
+.character-previews{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px}.character-previews figure{margin:0;background:#111c15;border:1px solid #394638;border-radius:8px;text-align:center;padding:8px 0 12px}.character-previews canvas{width:100%;height:auto;max-height:150px;object-fit:contain}.character-previews figcaption{font-size:13px;color:#d0d9c3}
+.color-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}.color-fields label{font-size:13px}.color-fields input[type=color]{height:46px;padding:4px;cursor:pointer;width:100%}
+.color-swatches{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.color-swatches button{padding:4px;min-width:40px;min-height:40px;background:transparent}.color-swatches i{display:block;width:26px;height:26px;border-radius:4px;border:1px solid #ddd8}.color-swatches button[aria-pressed=true]{outline:2px solid var(--accent);outline-offset:2px}
+#wardrobe .primary{width:100%}#color-reset{display:block;margin:8px auto 0}#nickname[readonly]{color:#d3dfc8;border-style:dashed}
+@media(max-width:650px){#account-bar{padding:8px 20px;gap:8px;justify-content:flex-start}#account-name{flex:1}#account-access input{font-size:16px}#account-bar button{min-height:44px}.color-swatches button{min-width:44px;min-height:44px}.character-previews canvas{max-height:125px}}

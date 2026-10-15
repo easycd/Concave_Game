@@ -14,9 +14,9 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
   const app = express();
   const http = createServer(app);
   const io = new Server(http, { maxHttpBufferSize: 16_384 });
-  const nightfall = createNightfall(io);
   const accounts = options.accountStore ?? createAccountStore();
   const ready = accounts.init();
+  const nightfall = createNightfall(io, { accountStore: process.env.DATABASE_URL ? accounts : undefined, ready, allowGuest: options.allowLegacyAuth === true });
   const rooms = new Map<string, GameRoom>();
   const sessions = new Map<string, { nickname: string; stats: AccountStats; room: string | null; socketId: string | null; disconnectedAt: number | null; lastAction: number }>();
   const whispers = new Map<string, { members: [string, string] }>();
@@ -252,7 +252,7 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
   const dist = path.resolve(process.cwd(), 'dist');
   app.use(express.static(dist, { setHeaders: (res, file) => { if (file.endsWith('index.html')) res.setHeader('Cache-Control', 'no-store'); } }));
   app.get('/{*path}', (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.sendFile(path.join(dist, 'index.html')); });
-  return { http, io, rooms, ready, accounts, close: async () => { clearInterval(interval); nightfall.close(); await new Promise<void>(resolve => io.close(() => resolve())); await accounts.close(); } };
+  return { http, io, rooms, ready, accounts, close: async () => { clearInterval(interval); await nightfall.close(); await new Promise<void>(resolve => io.close(() => resolve())); await accounts.close(); } };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

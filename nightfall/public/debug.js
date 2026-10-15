@@ -19,9 +19,9 @@ export function createDebugger({canvas,getState,getMyId,socket,notify,clearInput
   $('debug-json-save').onclick=()=>{const blob=new Blob([$('debug-json').value],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=snapshotName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
   function entities(){const s=getState();if(!s)return [];const m=s.map;return [
     ...s.players.filter(p=>p.x!==null&&p.y!==null).map(p=>({type:'player',id:p.id,data:p,x:p.x,y:p.y})),
-    ...['generators','cages','cabinets','exits'].flatMap(type=>m[type].map(p=>({type,id:p.id,data:p,x:p.x,y:p.y}))),
-    ...['pallets','walls','bushes'].flatMap(type=>m[type].map((p,i)=>({type,id:p.id||`${type==='walls'?'w':'b'}${i}`,data:p,x:p.x+p.w/2,y:p.y+p.h/2}))) ];}
-  const names={player:'플레이어',generators:'발전기',cages:'감옥',cabinets:'캐비넷',exits:'탈출구',pallets:'파레트',walls:'벽',bushes:'풀숲'};
+    ...['generators','cages','cabinets','exits','chests'].flatMap(type=>m[type].map(p=>({type,id:p.id,data:p,x:p.x,y:p.y}))),
+    ...['pallets','walls','bushes','windows'].flatMap(type=>m[type].map((p,i)=>({type,id:p.id||`${type==='walls'?'w':'b'}${i}`,data:p,x:p.x+p.w/2,y:p.y+p.h/2}))) ];}
+  const names={player:'플레이어',generators:'발전기',cages:'갈고리',cabinets:'캐비넷',exits:'탈출구',pallets:'파레트',walls:'벽',bushes:'풀숲',windows:'창문',chests:'상자'};
   function inspect(x,y){const scale=transform().scale,r=Math.max(20,10/scale),all=entities();let match=all.filter(o=>!o.data.w&&Math.hypot(x-o.x,y-o.y)<=r).sort((a,b)=>Math.hypot(x-a.x,y-a.y)-Math.hypot(x-b.x,y-b.y))[0];match??=all.find(o=>o.data.w&&x>=o.data.x&&x<=o.data.x+o.data.w&&y>=o.data.y&&y<=o.data.y+o.data.h);selected=match?{type:match.type,id:match.id}:null;collapsed=false;update();}
   canvas.addEventListener('pointerdown',e=>{if(!full()||e.button!==0)return;const t=transform();drag={x:e.clientX,y:e.clientY,cx:center.x,cy:center.y,scale:t.scale,moved:false};canvas.setPointerCapture(e.pointerId);});
   canvas.addEventListener('pointermove',e=>{if(!drag||!full())return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.moved ||= Math.hypot(dx,dy)>5;if(drag.moved)center={x:drag.cx-dx/drag.scale,y:drag.cy-dy/drag.scale};});
@@ -32,12 +32,12 @@ export function createDebugger({canvas,getState,getMyId,socket,notify,clearInput
   function name(id){if(!id)return '없음';return getState().players.find(p=>p.id===id)?.name||id.slice(0,8);}
   function details(o){const d=o.data,c=getState().config;const fields=[['ID',o.type==='player'?d.id.slice(0,8):o.id],['종류',names[o.type]],['좌표',`${d.x.toFixed(1)}, ${d.y.toFixed(1)}`]];
     if(d.w)fields.push(['크기',`${d.w} × ${d.h}`]);
-    if(o.type==='player')fields.push(['이름 / 역할',`${d.name} / ${d.role}`],['상태',`${d.status}${d.connected?'':' · 연결 끊김'}`],['감금 횟수',`${d.cageCount}/2`],['숨은 장소',d.hidden||'없음'],['운반 대상',name(d.carrying)],['스턴 / 면역',`${d.stun.toFixed(2)}s / ${d.immunity.toFixed(2)}s`]);
+    if(o.type==='player')fields.push(['이름 / 역할',`${d.name} / ${d.role}`],['상태',`${d.status}${d.connected?'':' · 연결 끊김'}`],['갈고리 단계',`${d.hookStage}/3 · ${d.hookTime.toFixed(1)}s`],['숨은 장소',d.hidden||'없음'],['운반 대상',name(d.carrying)],['스턴 / 면역',`${d.stun.toFixed(2)}s / ${d.immunity.toFixed(2)}s`]);
     if(o.type==='generators')fields.push(['진행도',`${d.progress.toFixed(2)} / ${c.generatorSeconds}s (${(d.progress/c.generatorSeconds*100).toFixed(1)}%)`],['수리 중',(d.workers||[]).map(name).join(', ')||'없음']);
-    if(o.type==='cages')fields.push(['수감자',name(d.occupant)],['구출 진행',`${d.rescueProgress.toFixed(2)} / ${c.rescueSeconds}s`],['구출 중',(d.rescuers||[]).map(name).join(', ')||'없음']);
+    if(o.type==='cages')fields.push(['걸린 생존자',name(d.occupant)],['복구 대기',`${Math.max(0,(d.availableUntil||0)-getState().elapsed).toFixed(1)}s`],['구출 진행',`${d.rescueProgress.toFixed(2)} / ${c.rescueSeconds}s`],['구출 중',(d.rescuers||[]).map(name).join(', ')||'없음']);
     if(o.type==='cabinets')fields.push(['숨은 플레이어',full()?name(d.occupant):'전체 맵 모드에서 확인']);
     if(o.type==='pallets')fields.push(['상태',{ready:'사용 가능',dropped:'내려짐',broken:'부서짐'}[d.state]],['파괴 진행',`${d.breakProgress.toFixed(2)} / ${c.breakPalletSeconds}s`]);
-    if(o.type==='exits')fields.push(['상태',getState().map.generators.every(g=>g.progress>=c.generatorSeconds)?'열림':'잠김']);
+    if(o.type==='exits')fields.push(['상태',d.open?'열림':`${d.progress.toFixed(1)} / ${c.gateSeconds}s`]);
     if(o.type==='walls')fields.push(['충돌','모든 플레이어 이동 차단']);if(o.type==='bushes')fields.push(['효과','살인마가 65px 이내로 접근할 때 보임']);return fields;
   }
   function update(){const s=getState(),active=enabled(),wide=full();if(!s||s.code!==lastRoom){lastRoom=s?.code;selected=null;center=null;collapsed=true;hitboxes=false;labels=false;ping=null;previousFull=false;}
@@ -46,8 +46,8 @@ export function createDebugger({canvas,getState,getMyId,socket,notify,clearInput
     if(!active){if(!$('debug-snapshot').hidden)closeSnapshot();return;}
     $('debug-toggle').textContent=wide?'일반 시야 T':'전체 맵 T';$('debug-toggle').classList.toggle('active',wide);$('debug-fit').disabled=!wide;$('debug-export').disabled=!wide;$('debug-hitboxes').classList.toggle('active',hitboxes);$('debug-labels').classList.toggle('active',labels);
     const p=s.players.find(p=>p.id===getMyId()),c=s.config,m=s.map;
-    $('debug-stats').textContent=`FPS ${fps} · PING ${ping===null?'—':`${ping}ms`} · SERVER ${s.debug.serverTickRate}Hz\n맵 ${m.width} × ${m.height} · SEED ${m.seed}\n내 좌표 ${p?.x===null?'관전':`${p?.x?.toFixed(1)}, ${p?.y?.toFixed(1)}`}\n속도 ${c.survivorSpeed} / ${c.survivorSpeed*c.killerSpeedMultiplier}px/s\n시야 반지름 ${c.survivorVision} / ${c.survivorVision*c.killerVisionMultiplier}px\n${s.phase==='lobby'?'대기실 · 게임 미시작':s.phase==='playing'?'게임 진행 중':'게임 종료'} · ${wide?`전체 맵 ${zoom.toFixed(2)}×`:'일반 시야'}`;
-    $('debug-counts').textContent=`플레이어 ${s.players.length} · 벽 ${m.walls.length} · 풀숲 ${m.bushes.length}\n발전기 ${m.generators.length} · 감옥 ${m.cages.length} · 캐비넷 ${m.cabinets.length} · 파레트 ${m.pallets.length} · 출구 ${m.exits.length}`;
+    $('debug-stats').textContent=`FPS ${fps} · PING ${ping===null?'—':`${ping}ms`} · SERVER ${s.debug.serverTickRate}Hz\n맵 ${m.width} × ${m.height}px (${c.mapMetersWidth} × ${c.mapMetersHeight}m) · SEED ${m.seed}\n내 좌표 ${p?.x===null?'관전':`${p?.x?.toFixed(1)}, ${p?.y?.toFixed(1)}`}\n속도 ${c.survivorSpeed} / ${(c.survivorSpeed*c.killerSpeedMultiplier).toFixed(1)}px/s\n시야 반지름 ${c.survivorVision} / ${c.survivorVision*c.killerVisionMultiplier}px\n${s.phase==='lobby'?'대기실 · 게임 미시작':s.phase==='playing'?'게임 진행 중':'게임 종료'} · ${wide?`전체 맵 ${zoom.toFixed(2)}×`:'일반 시야'}`;
+    $('debug-counts').textContent=`플레이어 ${s.players.length} · 벽 ${m.walls.length} · 풀숲 ${m.bushes.length}\n발전기 ${m.generators.length} · 갈고리 ${m.cages.length} · 창문 ${m.windows.length} · 캐비넷 ${m.cabinets.length} · 파레트 ${m.pallets.length} · 출구 ${m.exits.length}`;
     const o=selected?entities().find(o=>o.type===selected.type&&o.id===selected.id):null;$('debug-selected-title').textContent=o?`${names[o.type]} · ${o.type==='player'?o.data.name:o.id}`:'오브젝트를 클릭해 상태 확인';$('debug-selected-fields').replaceChildren();if(o)for(const [label,value]of details(o)){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;$('debug-selected-fields').append(dt,dd);}
     $('debug-generators').replaceChildren(...m.generators.map(g=>{const row=document.createElement('div');row.className='debug-gen-row';const id=document.createElement('span'),value=document.createElement('span');id.textContent=g.id;value.textContent=`${g.progress.toFixed(1)}s / ${c.generatorSeconds}s · ${(g.progress/c.generatorSeconds*100).toFixed(0)}%`;row.append(id,value);return row;}));
   }

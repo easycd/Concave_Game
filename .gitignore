@@ -7,3 +7,6 @@ screenshots/
 .env
 *.log
 test-results/
+
+# Local NIGHTFALL credentials and sessions
+.data/nightfall-accounts.json*

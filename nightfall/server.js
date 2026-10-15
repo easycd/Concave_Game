@@ -14,7 +14,12 @@ const clean=(value,max)=>{if(typeof value!=='string')throw new Error('텍스트�
 
 // Attach to an existing Socket.IO server without opening another Render port.
 export function createNightfall(io,options={}) {
-  const authReady=createIdentityStore(options);authReady.catch(()=>{});
+  const authReady=createIdentityStore(options);
+  authReady.catch(error=>{
+    // Log a diagnostic category, never credentials, connection strings or raw DB errors.
+    const code=error.message==='계정 영구 저장을 위해 DATABASE_URL을 설정해주세요.'?'DATABASE_URL_REQUIRED':/^[A-Z0-9_]{2,32}$/.test(error.code||'')?error.code:'IDENTITY_INIT_FAILED';
+    console.error('NIGHTFALL account initialization failed',JSON.stringify({code,databaseConfigured:!!process.env.DATABASE_URL}));
+  });
   const authContext={ready:authReady,io,allowGuest:options.allowGuest===true,attempts:new Map(),hashing:0};
   if(io.httpServer)identityContexts.set(io.httpServer,authContext);
   const ns=io.of('/nightfall'),rooms=new Map(),sessions=new Map();

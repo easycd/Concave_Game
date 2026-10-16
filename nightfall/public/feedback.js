@@ -14,7 +14,7 @@ export function createFeedbackPresentation(){
     const dt=lastNow===null?0:clamp((now-lastNow)/1000,0,.1);lastNow=now;
     const target=s.heartbeat||0;
     strength+=(target-strength)*(1-Math.exp(-dt/0.22));if(strength<.001&&target===0)strength=0;
-    if(s.heartbeatDirection!==null&&s.heartbeatDirection!==undefined)direction=s.heartbeatDirection;
+    direction=null;
     if(s.hit?.sequence!==undefined&&s.hit.sequence!==hitSequence){
       hitSequence=s.hit.sequence;
       const age=s.elapsed-s.hit.time;
@@ -29,7 +29,7 @@ export function createFeedbackPresentation(){
     if(strength>0&&!second&&phase>=.18){second=true;beat=2;}
     const bump=(t,width)=>t>=0&&t<width?Math.sin(Math.PI*t/width):0;
     const pulse=reduced?0:.35*bump(phase,.16)+.65*bump(phase-.18,.22);
-    const edge=smooth((strength-.5)/.25)*strength*(reduced?1:.65+.35*pulse)*(1-hit/.25);
+    const edge=0;
     return {strength,edge,hit,pulse,beat,direction};
   }
   return {frame,reset};

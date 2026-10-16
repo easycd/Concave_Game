@@ -30,7 +30,7 @@ export class SurvivorBots{
   frame(p){
     const r=this.room;
     p.input={x:0,y:0,space:false,work:false,run:false,crouch:false,attack:false,item:false,self:false,drop:false,aimX:1,aimY:0};
-    if(p.skill){const t=(r.elapsed-p.skill.start)/p.skill.duration;const zone=p.skill.good;
+    if(p.skill){let t=(r.elapsed-p.skill.start)/p.skill.duration;if(p.skill.type==='wiggle')t=1-Math.abs(1-t*2);const zone=p.skill.type==='wiggle'?[.08,.16]:p.skill.good;
       if(t>=zone[0]&&t<=zone[1])p.input.space=true;
     }
     if(p.status==='caged'){p.input.self=p.resolve>=1;return;}
@@ -63,6 +63,6 @@ export class SurvivorBots{
     // The last grid node can be just outside interaction range. Finish the
     // short approach instead of idling forever with an empty route.
     const next=cached.path[0]||target;
-    const dx=next.x-p.x,dy=next.y-p.y,d=Math.max(1,Math.hypot(dx,dy));p.input.x=dx/d;p.input.y=dy/d;p.input.run=danger;
+    const dx=next.x-p.x,dy=next.y-p.y,d=Math.max(1,Math.hypot(dx,dy));p.input.x=dx/d;p.input.y=dy/d;p.input.aimX=dx/d;p.input.aimY=dy/d;p.input.run=danger;
   }
 }

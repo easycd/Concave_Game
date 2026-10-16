@@ -37,6 +37,7 @@ export function createAudio({getState,getMyId,button}){
      osc.connect(gain);gain.connect(pan);pan.connect(master);osc.onended=()=>{osc.disconnect();gain.disconnect();pan.disconnect();};osc.start(t);osc.stop(t+duration+.01);
    }
    if(ambient.size>100)ambient.clear();
+   if(view.role==='survivor')for(const b of s.beacons||[]){const d=Math.hypot(view.x-b.x,view.y-b.y),range=32*s.config.pixelsPerMeter;if(d<range&&now-(ambient.get('beam:'+b.id)||0)>2200){ambient.set('beam:'+b.id,now);tone(440,.35,.025*(1-d/range),'triangle');}}
    const killer=s.players.find(p=>p.role==='killer');
    if(view.role==='survivor'&&killer?.chaseTarget===view.id&&now-(ambient.get('chase')||0)>550){ambient.set('chase',now);tone(92,.2,.035,'sawtooth');}
    if(s.map.hatch.visible&&s.map.hatch.open&&view.x!=null){const d=Math.hypot(view.x-s.map.hatch.x,view.y-s.map.hatch.y),r=16*s.config.pixelsPerMeter;if(d<r&&now-(ambient.get('hatch')||0)>900){ambient.set('hatch',now);tone(180,.65,.055*(1-d/r),'triangle');}}

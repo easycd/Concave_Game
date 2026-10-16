@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { Server } from 'socket.io';
+import { canSee } from './public/vision.js';
+import { teamActivity } from './team-activity.js';
 import { Room, distance, lineOfSight, terrorCue } from './game.js';
 import { CONFIG as C } from './config.js';
 import { createIdentityStore, credentials, readSession, sessionCookie, DEFAULT_COLORS } from './accounts.js';
@@ -49,15 +51,16 @@ export function createNightfall(io,options={}) {
       const targets=s.players.filter(p=>['alive','down','caged','carried'].includes(p.status));
       view=targets.find(p=>p.id===own.spectateId)||targets[0]||own;
     }
-    s.viewId=view.id;s.windowBlocks=room.map.windows.filter(w=>w.blockedUntil>room.elapsed).map(w=>({id:w.id,until:w.blockedUntil}));
+    s.viewId=view.id;s.windowBlocks=Object.entries(room.players.get(view.id)?.vaultCounts||{}).filter(([,v])=>v.blockedUntil>room.elapsed).map(([id,v])=>({id,until:v.blockedUntil}));
     const radius=C.survivorVision*(view.role==='killer'?C.killerVisionMultiplier:1);
     s.players=s.players.map(p=>{
-      const teamAura=view.role==='survivor'&&p.role==='survivor'&&(['down','caged'].includes(p.status)||view.status==='down');
-      const visible=debugFullMap||p.id===view.id||teamAura||(!p.hidden&&distance(view,p)<=radius);
-      return {...p,x:visible?p.x:null,y:visible?p.y:null,hidden:debugFullMap||p.id===view.id?p.hidden:null,palletDrop:visible?p.palletDrop:null,skill:p.id===own.id?p.skill:null,vault:visible?p.vault:null,action:p.id===own.id?p.action:null};
+      const teamAura=view.role==='survivor'&&p.role==='survivor'&&!p.hidden&&(['down','caged'].includes(p.status)||view.status==='down');
+      const keyAura=view.role==='survivor'&&!view.hidden&&view.keyAuraUntil>room.elapsed&&p.role==='survivor'&&!p.hidden&&distance(view,p)<C.keyRange;
+      const visible=debugFullMap||p.id===view.id||teamAura||keyAura||(!p.hidden&&canSee(room.map,view,p,C));
+      return {...p,teamActivity:view.role==='survivor'&&p.role==='survivor'?teamActivity(room,room.players.get(p.id)):null,hookStage:view.role==='survivor'||p.id===view.id?p.hookStage:null,x:visible?p.x:null,y:visible?p.y:null,hidden:debugFullMap||p.id===view.id?p.hidden:null,palletDrop:visible?p.palletDrop:null,skill:p.id===own.id?p.skill:null,vault:visible?p.vault:null,action:p.id===own.id?p.action:null};
     });
     // Full object inspection is available only to the explicitly requested admin nickname.
-    if(!debugFullMap)s.map={...s.map,hatch:s.map.hatch.visible?s.map.hatch:{visible:false,open:false,x:null,y:null},chests:s.map.chests.map(({item,...c})=>c),items:(s.map.items||[]).filter(i=>distance(view,i)<radius),cabinets:s.map.cabinets.map(({occupant,...c})=>c),generators:s.map.generators.map(({workers,...g})=>g),cages:s.map.cages.map(({rescuers,...c})=>c)};
+    if(!debugFullMap)s.map={...s.map,hatch:s.map.hatch.visible?s.map.hatch:{visible:false,open:false,x:null,y:null},chests:s.map.chests.map(({item,...c})=>c),items:(s.map.items||[]).filter(i=>canSee(room.map,view,i,C)),cabinets:s.map.cabinets.map(({occupant,...c})=>c),generators:s.map.generators.map(({workers,...g})=>g),cages:s.map.cages.map(({rescuers,...c})=>c)};
     s.audio=[...room.players.values()].filter(p=>p.id!==view.id&&['alive','down'].includes(p.status)&&!p.elusive).flatMap(p=>{
       const d=distance(view,p),range=(p.hidden?8:16)*C.pixelsPerMeter;
       if(d>=range)return [];const volume=(1-d/range)*(lineOfSight(room.map,view,p)?1:.5),pan=Math.max(-1,Math.min(1,(p.x-view.x)/range));
@@ -68,7 +71,8 @@ export function createNightfall(io,options={}) {
     const killer=[...room.players.values()].find(p=>p.role==='killer');
     const cue=terrorCue(room.phase,view,killer);s.heartbeat=cue.strength;s.heartbeatDirection=cue.direction;
     const hit=room.players.get(view.id);s.hit=room.phase==='playing'&&view.role==='survivor'?{sequence:hit.hitSequence,time:hit.lastHitAt}:null;
-    s.traces=debugFullMap||view.role==='killer'?s.traces.filter(t=>debugFullMap||distance(view,t)<radius):[];
+    s.beacons=view.role==='survivor'?room.beacons:[];
+    s.traces=debugFullMap||view.role==='killer'?s.traces.filter(t=>debugFullMap||canSee(room.map,view,t,C)):[];
     s.noises=debugFullMap||view.role==='killer'?s.noises:[];
     if(!full) { const {walls,bushes,width,height,seed,zones,paths,decor,spawns,windows,name,structures,...dynamic}=s.map;s.map=dynamic;delete s.config;delete s.perks; }
     socket.emit('state',s);
@@ -195,7 +199,7 @@ export async function handleNightfallRequest(req,res,base='/dbd') {
   if(url.pathname===base){res.writeHead(302,{Location:`${base}/`});res.end();return true;}
   if(!url.pathname.startsWith(`${base}/`))return false;
   const file=url.pathname.slice(base.length+1)||'index.html';
-  if(!['index.html','account.js','account.css','lobby.css','social.js','social.css','app.js','scene.js','skill-check.js','feedback.js','audio.js','style.css','debug.js','debug.css','chat.js','chat.css'].includes(file)){res.writeHead(404);res.end('Not found');return true;}
+  if(!['index.html','account.js','account.css','lobby.css','social.js','social.css','app.js','scene.js','skill-check.js','feedback.js','team-hud.js','vision.js','audio.js','style.css','debug.js','debug.css','chat.js','chat.css'].includes(file)){res.writeHead(404);res.end('Not found');return true;}
   try {const body=await readFile(path.join(root,'public',file));res.writeHead(200,{'Content-Type':file.endsWith('.js')?'text/javascript; charset=utf-8':file.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'});res.end(body);}catch{res.writeHead(500);res.end('Game assets unavailable');}return true;
 }
 export function createStandaloneServer(options={}){const http=createServer((req,res)=>{void handleNightfallRequest(req,res).then(handled=>{if(handled)return;if(req.url==='/'){res.writeHead(302,{Location:'/dbd/'});res.end();}else{res.writeHead(404);res.end();}}).catch(()=>{if(!res.headersSent){res.writeHead(500);res.end('Game request failed');}else res.destroy();});});const io=new Server(http,{maxHttpBufferSize:16384});const game=createNightfall(io,options);let closePromise=null;return {http,io,game,close:()=>closePromise??=(async()=>{await game.close();await new Promise(resolve=>io.close(resolve));})()};}

@@ -12,7 +12,9 @@ export const CONFIG = Object.freeze({
   attackRange: 100, attackCooldown: 2.7, attackMissCooldown: 1.5,
   tickRate: 30, interactionRadius: 80, playerRadius: 15,
   disconnectGraceSeconds: 30, releaseImmunitySeconds: 10,
-  hitBoostSeconds: 2.2, hitBoostSpeed: 6.6*PIXELS_PER_METER,
+  hitBoostSeconds: 1.8, hitBoostSpeed: 6.6*PIXELS_PER_METER,
   pickupSeconds: 2, palletDropSeconds: .5, crawlSpeed: 29.75, scratchSeconds: 10, selfMendSeconds: 10, friendMendSeconds: 6,
+  mapRange: 32*PIXELS_PER_METER, mapAuraSeconds: 12, keyRange: 56*PIXELS_PER_METER, keyAuraSeconds: 9, itemChannelSeconds: 2, mapBeaconSeconds: 20,
+  survivorFov: 150, killerFov: 100,
   campRadius: 16*PIXELS_PER_METER, skillFailureSeconds: 3,
 });

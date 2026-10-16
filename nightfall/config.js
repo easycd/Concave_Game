@@ -10,7 +10,7 @@ export const CONFIG = Object.freeze({
   stunSeconds: 2, breakPalletSeconds: 2.34, kickSeconds: 1.8,
   gateSeconds: 20, endgameSeconds: 120, wiggleSeconds: 16,
   attackRange: 100, attackCooldown: 2.7, attackMissCooldown: 1.5,
-  tickRate: 30, interactionRadius: 80, playerRadius: 15,
+  loadingSeconds: 10, tickRate: 30, interactionRadius: 80, playerRadius: 15,
   disconnectGraceSeconds: 30, releaseImmunitySeconds: 10,
   hitBoostSeconds: 1.8, hitBoostSpeed: 6.6*PIXELS_PER_METER,
   pickupSeconds: 2, palletDropSeconds: .5, crawlSpeed: 29.75, scratchSeconds: 10, selfMendSeconds: 10, friendMendSeconds: 6,

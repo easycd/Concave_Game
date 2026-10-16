@@ -1,3 +1,4 @@
+import {placeEdgeMarker} from './marker-layout.js';
 import { visionPolygon, viewFov, viewAngle } from './vision.js';
 import { createSkillCheckPresentation } from './skill-check.js';
 export function createScene(context){
@@ -87,22 +88,23 @@ export function createScene(context){
    for(let i=1;i<points.length;i++){const a=screen(points[i-1]),b=screen(points[i]),edge=Math.pow(Math.abs((points[i-1].delta+points[i].delta)/fov),8);fc.fillStyle=`rgba(3,3,8,${edge})`;fc.beginPath();fc.moveTo(cx,cy);fc.lineTo(a.x,a.y);fc.lineTo(b.x,b.y);fc.closePath();fc.fill();}
    ctx.drawImage(fog,0,0);
  }
- function skill(s,p,W,H,snapshotAge,camera,now){const frame=skillPresentation.frame(s,p,W,H,snapshotAge,camera,now,reducedMotion.matches);if(!frame)return;const {check:c,phase,x,y,opacity}=frame,r=51;
+ function skill(s,p,W,H,snapshotAge,camera,now,scale=1){const frame=skillPresentation.frame(s,p,W,H,snapshotAge,camera,now,reducedMotion.matches);if(!frame)return;const {check:c,phase,x,y,opacity}=frame,r=51;
  if(c.type==='wiggle'){
    const wave=1-Math.abs(1-phase*2),left=W/2-120,top=H*.7;
-   ctx.save();ctx.globalAlpha*=opacity;rect(left-14,top-25,268,90,'#0b1411e6',12);rect(left,top,240,10,'#526451');
+   ctx.save();ctx.translate(W/2,top);const fitScale=Math.min(scale,(W-28)/268);ctx.scale(fitScale,fitScale);ctx.translate(-W/2,-top);ctx.globalAlpha*=opacity;rect(left-14,top-25,268,90,'#0b1411e6',12);rect(left,top,240,10,'#526451');
    for(const x of [left+30,left+210]){rect(x-19,top-7,38,24,'#d5dbb7',2);rect(x-7,top-7,14,24,'#e3bc76',2);}
    rect(left+wave*240-2,top-14,4,38,'#ed876e',1);text('SPACE · 운반 저항',W/2,top+50,'#e9e8d4',13);ctx.restore();return;
- }ctx.save();ctx.globalAlpha*=opacity;ctx.fillStyle='#0b1411e6';ctx.beginPath();ctx.arc(x,y,r+17,0,7);ctx.fill();ctx.strokeStyle='#899a8b';ctx.lineWidth=7;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.stroke();for(const [zone,color]of [[c.good,'#e6e8cc'],[c.great,'#e4bc73']]){ctx.strokeStyle=color;ctx.beginPath();ctx.arc(x,y,r,-Math.PI/2+zone[0]*Math.PI*2,-Math.PI/2+zone[1]*Math.PI*2);ctx.stroke();}ctx.strokeStyle='#dc7258';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(-Math.PI/2+phase*Math.PI*2)*(r+10),y+Math.sin(-Math.PI/2+phase*Math.PI*2)*(r+10));ctx.stroke();ctx.lineWidth=1;text('SPACE',x,y+5,'#e9e8d4',13);text(c.type==='wiggle'?'운반 저항':c.type==='hook'?'버티기':'스킬 체크',x,y+r+39,'#dcc39c',12);ctx.restore();}
+ }ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.translate(-x,-y);ctx.globalAlpha*=opacity;ctx.fillStyle='#08070bb8';ctx.beginPath();ctx.arc(x,y,r+17,0,7);ctx.fill();ctx.strokeStyle='#899a8b';ctx.lineWidth=7;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.stroke();for(const [zone,color]of [[c.good,'#e6e8cc'],[c.great,'#e4bc73']]){ctx.strokeStyle=color;ctx.beginPath();ctx.arc(x,y,r,-Math.PI/2+zone[0]*Math.PI*2,-Math.PI/2+zone[1]*Math.PI*2);ctx.stroke();}ctx.strokeStyle='#dc7258';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(-Math.PI/2+phase*Math.PI*2)*(r+10),y+Math.sin(-Math.PI/2+phase*Math.PI*2)*(r+10));ctx.stroke();ctx.lineWidth=1;text('SPACE',x,y+5,'#e9e8d4',13);text(c.type==='wiggle'?'운반 저항':c.type==='hook'?'버티기':'스킬 체크',x,y+r+39,'#dcc39c',12);ctx.restore();}
  function hookIcon(x,y,color,size=16){ctx.save();ctx.translate(x,y);ctx.strokeStyle=color;ctx.lineWidth=3;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(-6,-size*.7);ctx.lineTo(6,-size*.7);ctx.lineTo(6,2);ctx.arc(0,2,6,0,Math.PI);ctx.stroke();ctx.restore();}
- function auras(s,view,camera,W,H){
+ function auras(s,view,camera,W,H,reserved=[]){
    const layoutKey=`${s.map.seed}:${view.id}:${view.role}:${view.mapReading}:${W}:${H}:${Math.round(camera.x/64)}:${Math.round(camera.y/64)}:${s.players.map(p=>p.id+p.status).join(',')}`;
    if(layoutKey!==auraLayoutKey){auraLayoutKey=layoutKey;auraSlots.clear();}
+   auraSlots.clear();
    const marker=(p,label,color,kind,pulse=false)=>{
-     const q=projectMarker(p,camera,W,H);if(q.offscreen)return;
+     const q=projectMarker(p,camera,W,H);if(q.offscreen&&view.role!=='killer')return;if(q.offscreen){if(q.edge==='bottom')q.y=H-28;Object.assign(q,placeEdgeMarker(q,W,H,reserved,[...auraSlots.values()]));auraSlots.set(kind+':'+p.id,{x:q.x,y:q.y});}
      const wave=pulse&&!reducedMotion.matches?.5+.5*Math.sin((s.visualTime??s.elapsed)*4):0;
      ctx.save();ctx.translate(q.x,q.y);ctx.globalAlpha=.7+.25*wave;
-     ctx.shadowColor=color;ctx.shadowBlur=8;
+     ctx.shadowColor=color;ctx.shadowBlur=8;if(q.offscreen){ctx.save();ctx.rotate(q.angle);ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(18,-5);ctx.lineTo(24,0);ctx.lineTo(18,5);ctx.stroke();ctx.restore();}
      if(kind==='hook')hookIcon(0,-1,color);else{ctx.strokeStyle=color;ctx.lineWidth=2;ctx.strokeRect(-12,-13,24,26);}
      ctx.restore();
    };
@@ -117,7 +119,7 @@ export function createScene(context){
    }
    if(view.role==='survivor')for(const p of s.players)if(p.id!==view.id&&p.role==='survivor'&&p.x!=null){if(p.status==='caged')marker(p,`${p.name} · ${p.hookStage}단계`,'#ff647d','hook',true);else if(p.status==='down'||view.status==='down'&&p.status==='alive'){const q=projectMarker(p,camera,W,H);if(!q.offscreen){ctx.strokeStyle='#dacaaa';ctx.beginPath();ctx.arc(q.x,q.y,21,0,7);ctx.stroke();text(p.name,q.x,q.y-29,'#dacaaa',12);}}}
  }
- return {floor,terrain,objects,players,visibility,skill,auras,resetSkill:skillPresentation.reset};
+ return {floor,terrain,objects,players,visibility,skill,auras,resetSkill:skillPresentation.reset,pressSkill:skillPresentation.press};
 }
 export function projectMarker(p,camera,W,H){
  const dx=p.x-camera.x,dy=p.y-camera.y,rx=Math.max(1,W/2-48),ry=Math.max(1,H/2-Math.min(112,H*.22)),factor=Math.min(1,rx/Math.max(.001,Math.abs(dx)),ry/Math.max(.001,Math.abs(dy)));

@@ -7,3 +7,8 @@
 
 /* Ruined-forest HUD palette. */
 #chat-window{background:#100e17df;border-color:#5d515f;}#chat-header{background:#211720;}#chat-send{background:#8d2948;color:#fff2f5;border-color:#b45972;}
+
+#chat-window{background:rgba(12,9,17,.48);border-color:#a8919c55;backdrop-filter:none;box-shadow:none}#chat-header{background:rgba(48,22,34,.4)}#chat-input{background:rgba(12,9,17,.5)}
+
+/* Trial HUD occupies the left; chat docks at the upper right. */
+#chat-window{left:auto;right:24px;top:100px;bottom:auto;width:280px}#chat-messages{height:80px}@media(max-width:700px){#chat-window{right:14px;top:90px;width:168px;min-width:0}#chat-messages{height:60px}}

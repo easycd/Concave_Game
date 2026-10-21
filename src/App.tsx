@@ -73,7 +73,7 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
     try { localStorage.setItem('omok-theme', theme); } catch { /* Theme still works when browser storage is unavailable. */ }
-    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#151b18' : '#f5f4f0');
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0b0c0e' : '#f5f4f0');
   }, [theme]);
 
   useEffect(() => {

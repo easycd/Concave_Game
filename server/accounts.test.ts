@@ -32,6 +32,9 @@ test('homepage login links to omok records, ranking and admin internal API', asy
       const r = await fetch(url + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"nickname":"x","password":"yyyyyyyy"}' });
       assert.notEqual(r.status, 201); assert.notEqual(r.status, 200, `${path} 는 더 이상 없어야 함`);
     }
+    const foreign = io(url, { forceNew: true, reconnection: false, transports: ['websocket'], extraHeaders: { Cookie: cookies[0], Origin: 'https://evil.example' } });
+    await new Promise<void>(resolve => { foreign.once('connect_error', () => resolve()); foreign.once('connect', () => { assert.fail('다른 사이트에서 소켓 연결됨'); }); });
+    foreign.close();
     const anonymous = io(url, { forceNew: true, reconnection: false });
     await new Promise<void>(resolve => { anonymous.once('connect_error', () => resolve()); anonymous.once('connect', () => { assert.fail('로그인 없이 소켓 연결됨'); }); });
     anonymous.close();
@@ -50,7 +53,8 @@ test('homepage login links to omok records, ranking and admin internal API', asy
     await pause(); assert.equal((await send(sockets[1], 'resign')).ok, true);
     const deadline = Date.now() + 2000;
     while ((await accounts.leaderboard())[0]?.wins !== 1) { if (Date.now() > deadline) throw new Error('전적 저장 시간 초과'); await new Promise(r => setTimeout(r, 20)); }
-    const ranking = await (await fetch(`${url}/api/ranking`)).json();
+    assert.equal((await fetch(`${url}/api/ranking`)).status, 401, '랭킹도 로그인 필요');
+    const ranking = await (await fetch(`${url}/api/ranking`, { headers: { Cookie: cookies[0] } })).json();
     assert.equal(ranking.ranking[0].nickname, '랭커하나'); assert.equal(ranking.ranking[1].losses, 1);
     assert.equal(await accounts.recordGame(server.rooms.get(created.code)!.state.gameId, '1v1', 0, []), false);
 
@@ -64,6 +68,12 @@ test('homepage login links to omok records, ranking and admin internal API', asy
     assert.equal(record.record.wins, 1);
     assert.equal((await internal('PUT', { 'X-Internal-Token': 'secret-token' }, { nickname: '새이름' })).status, 200);
     assert.equal((await accounts.stats(id))!.nickname, '새이름');
+    // forced logout from the admin page: player b's connection drops at once
+    const idB = members.get('b'.repeat(64))!.id;
+    const kickedB = new Promise<void>(resolve => sockets[1].once('signedOut', () => resolve()));
+    assert.equal((await fetch(`${url}/internal/users/${idB}/logout`, { method: 'POST', headers: { 'X-Internal-Token': 'wrong' } })).status, 404);
+    assert.equal((await fetch(`${url}/internal/users/${idB}/logout`, { method: 'POST', headers: { 'X-Internal-Token': 'secret-token' } })).status, 200);
+    await kickedB;
     const kicked = new Promise<void>(resolve => sockets[0].once('signedOut', () => resolve()));
     assert.equal((await (await internal('DELETE', { 'X-Internal-Token': 'secret-token' })).json()).removed, true);
     await kicked;

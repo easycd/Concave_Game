@@ -260,7 +260,7 @@ export default function App() {
   async function logout() {
     if (room) await goHome();
     socket.current?.disconnect(); socket.current = null;
-    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    await fetch(`${HOME}api/auth/logout`, { method: 'POST' }).catch(() => undefined);
     location.assign(HOME);
   }
   async function copyRoomCode() {

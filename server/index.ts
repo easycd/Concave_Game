@@ -1,6 +1,7 @@
 import express from 'express';
 import { createServer } from 'node:http';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { Server } from 'socket.io';
@@ -17,6 +18,20 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
   const app = express();
   const root = express();
   root.disable('x-powered-by'); app.disable('x-powered-by');
+  // Security headers on every response. The one inline script in index.html (theme before first paint) is allowed by its hash.
+  const dist = path.resolve(process.cwd(), 'dist');
+  const inlineScripts = (() => {
+    try { return [...readFileSync(path.join(dist, 'index.html'), 'utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => `'sha256-${createHash('sha256').update(m[1]).digest('base64')}'`).join(' '); }
+    catch { return ''; }
+  })();
+  const csp = `default-src 'self'; script-src 'self' ${inlineScripts}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`;
+  root.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'same-origin');
+    res.setHeader('Content-Security-Policy', csp);
+    next();
+  });
   if (base !== '/') {
     const bare = base.slice(0, -1);
     root.use((req, res, next) => {
@@ -27,7 +42,13 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
   }
   root.use(base, app);
   const http = createServer(root);
-  const io = new Server(http, { maxHttpBufferSize: 16_384, path: `${base}socket.io` });
+  // Browsers always send Origin on a WebSocket/polling handshake; refuse ones from another site.
+  const sameSite = (req: { headers: Record<string, string | string[] | undefined> }) => {
+    const origin = req.headers.origin;
+    if (typeof origin !== 'string') return true;
+    try { return new URL(origin).host === req.headers.host; } catch { return false; }
+  };
+  const io = new Server(http, { maxHttpBufferSize: 16_384, path: `${base}socket.io`, allowRequest: (req, done) => done(null, sameSite(req)) });
   const accounts = options.accountStore ?? createAccountStore();
   const ready = accounts.init();
   const verifySession = options.verifySession ?? createHomeAuth();
@@ -92,7 +113,11 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
     try { const account = await memberFor(req.headers.cookie); if (!account) return res.status(401).json({ ok: false, error: '로그인이 필요합니다.' }); res.json({ ok: true, account }); }
     catch (error) { res.status(503).json({ ok: false, error: error instanceof HomeAuthUnavailable ? error.message : '잠시 후 다시 시도해주세요.' }); }
   });
-  app.get('/api/ranking', async (_req, res) => { await ready; res.json({ ok: true, ranking: await accounts.leaderboard() }); });
+  app.get('/api/ranking', async (req, res) => {
+    try { if (!await verifySession(req.headers.cookie)) return res.status(401).json({ ok: false, error: '로그인이 필요합니다.' }); }
+    catch { return res.status(503).json({ ok: false, error: '잠시 후 다시 시도해주세요.' }); }
+    await ready; res.json({ ok: true, ranking: await accounts.leaderboard() });
+  });
   io.use((socket, next) => {
     void (async () => {
       try {
@@ -288,9 +313,10 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
     if (session && !session.room) { session.nickname = nickname; session.stats = { ...session.stats, nickname }; directory(); }
     res.json({ ok: true, changed });
   });
+  // Signed out on the homepage by the admin (forced logout or new password) → drop the live connection now.
+  app.post('/internal/users/:id/logout', async (req, res) => { verifySession.forget?.(req.params.id); kick(req.params.id); res.json({ ok: true }); });
   app.delete('/internal/users/:id', async (req, res) => { await ready; verifySession.forget?.(req.params.id); kick(req.params.id); res.json({ ok: true, removed: await accounts.remove(req.params.id) }); });
   app.get('/api/health', (_req, res) => res.json({ ok: true, rooms: rooms.size }));
-  const dist = path.resolve(process.cwd(), 'dist');
   app.use(express.static(dist, { setHeaders: (res, file) => { if (file.endsWith('index.html')) res.setHeader('Cache-Control', 'no-store'); } }));
   app.get('/{*path}', (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.sendFile(path.join(dist, 'index.html')); });
   return { http, io, rooms, ready, accounts, close: async () => { clearInterval(interval); clearInterval(recheck); await new Promise<void>(resolve => io.close(() => resolve())); await accounts.close(); } };

@@ -1,23 +1,37 @@
 import express from 'express';
 import { createServer } from 'node:http';
-import { randomBytes, randomUUID } from 'node:crypto';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { Server } from 'socket.io';
 import { GameRoom } from './game.js';
 import { type AccountStats, type ChatMessage, type OnlineUser, type Reply, type RoomInvite, type RoomSummary, type WhisperMessage } from '../src/shared.js';
-import { createAccountStore, persistentAccounts, type AccountStore } from './accounts.js';
+import { createAccountStore, type AccountStore } from './accounts.js';
+import { createHomeAuth, HomeAuthUnavailable, internalAllowed, readHomeToken, type VerifySession } from './homeAuth.js';
 
 /** 게임을 올릴 주소 경로. 예: BASE_PATH=/omok → https://도메인/omok/ . 없으면 맨 앞(/) */
 export const basePath = (value = process.env.BASE_PATH ?? '/') => `/${value.replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
 
-const { createNightfall, handleNightfallRequest } = await import(pathToFileURL(path.resolve(process.cwd(), 'nightfall/server.js')).href);
-
-export function createGameServer(options: { accountStore?: AccountStore; allowLegacyAuth?: boolean; tickIntervalMs?: number } = {}) {
+export function createGameServer(options: { accountStore?: AccountStore; verifySession?: VerifySession; internalToken?: string; allowLegacyAuth?: boolean; tickIntervalMs?: number } = {}) {
   const base = basePath();
   const app = express();
   const root = express();
   root.disable('x-powered-by'); app.disable('x-powered-by');
+  // Security headers on every response. The one inline script in index.html (theme before first paint) is allowed by its hash.
+  const dist = path.resolve(process.cwd(), 'dist');
+  const inlineScripts = (() => {
+    try { return [...readFileSync(path.join(dist, 'index.html'), 'utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => `'sha256-${createHash('sha256').update(m[1]).digest('base64')}'`).join(' '); }
+    catch { return ''; }
+  })();
+  const csp = `default-src 'self'; script-src 'self' ${inlineScripts}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`;
+  root.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'same-origin');
+    res.setHeader('Content-Security-Policy', csp);
+    next();
+  });
   if (base !== '/') {
     const bare = base.slice(0, -1);
     root.use((req, res, next) => {
@@ -28,10 +42,17 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
   }
   root.use(base, app);
   const http = createServer(root);
-  const io = new Server(http, { maxHttpBufferSize: 16_384, path: `${base}socket.io` });
+  // Browsers always send Origin on a WebSocket/polling handshake; refuse ones from another site.
+  const sameSite = (req: { headers: Record<string, string | string[] | undefined> }) => {
+    const origin = req.headers.origin;
+    if (typeof origin !== 'string') return true;
+    try { return new URL(origin).host === req.headers.host; } catch { return false; }
+  };
+  const io = new Server(http, { maxHttpBufferSize: 16_384, path: `${base}socket.io`, allowRequest: (req, done) => done(null, sameSite(req)) });
   const accounts = options.accountStore ?? createAccountStore();
   const ready = accounts.init();
-  const nightfall = createNightfall(io, { accountStore: persistentAccounts() ? accounts : undefined, ready, allowGuest: options.allowLegacyAuth === true });
+  const verifySession = options.verifySession ?? createHomeAuth();
+  const internalToken = options.internalToken ?? process.env.INTERNAL_TOKEN ?? '';
   const rooms = new Map<string, GameRoom>();
   const sessions = new Map<string, { nickname: string; stats: AccountStats; room: string | null; socketId: string | null; disconnectedAt: number | null; lastAction: number }>();
   const whispers = new Map<string, { members: [string, string] }>();
@@ -75,34 +96,34 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
   };
   const cleanText = (value: unknown, max: number) => { if (typeof value !== 'string') throw new Error('텍스트를 입력해주세요.'); const v = value.trim().replace(/[\u0000-\u001f\u007f]/g, ''); if (!v || v.length > max) throw new Error(`1~${max}자로 입력해주세요.`); return v; };
   const cleanNickname = (value: unknown) => cleanText(value, 12);
-  const cleanPassword = (value: unknown) => { if (typeof value !== 'string' || value.length < 6 || value.length > 72) throw new Error('비밀번호는 6~72자로 입력해주세요.'); return value; };
   const cleanRoomPassword = (value: unknown) => {
     if (value === undefined || value === null || value === '') return null;
     if (typeof value !== 'string' || value.length < 4 || value.length > 20 || /[\u0000-\u001f\u007f]/.test(value)) throw new Error('방 비밀번호는 제어 문자를 제외한 4~20자로 입력해주세요.');
     return value;
   };
-  const cookieName = 'gomoku_session';
-  const readCookie = (header = '') => Object.fromEntries(header.split(';').map(part => part.trim().split('=').map(decodeURIComponent)).filter(pair => pair.length === 2))[cookieName];
-  const setSessionCookie = (res: express.Response, token: string) => res.setHeader('Set-Cookie', `${cookieName}=${encodeURIComponent(token)}; Path=${base}; HttpOnly; SameSite=Lax; Max-Age=2592000${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+  /** Homepage member for this request, with an omok record created on first visit. */
+  const memberFor = async (cookieHeader: string | undefined) => {
+    const user = await verifySession(cookieHeader);
+    if (!user) return null;
+    await ready;
+    return accounts.ensure(user);
+  };
   app.use(express.json({ limit: '2kb' }));
-  app.post('/api/auth/register', async (req, res) => {
-    try { await ready; const account = await accounts.register(cleanNickname(req.body?.nickname), cleanPassword(req.body?.password)); const token = await accounts.createSession(account.id); setSessionCookie(res, token); res.status(201).json({ ok: true, account }); }
-    catch (error) { const message = error instanceof Error ? error.message : '회원가입에 실패했습니다.'; res.status(message === '중복된 닉네임입니다.' ? 409 : 400).json({ ok: false, error: message }); }
+  app.get('/api/me', async (req, res) => {
+    try { const account = await memberFor(req.headers.cookie); if (!account) return res.status(401).json({ ok: false, error: '로그인이 필요합니다.' }); res.json({ ok: true, account }); }
+    catch (error) { res.status(503).json({ ok: false, error: error instanceof HomeAuthUnavailable ? error.message : '잠시 후 다시 시도해주세요.' }); }
   });
-  app.post('/api/auth/login', async (req, res) => {
-    try { await ready; const account = await accounts.login(cleanNickname(req.body?.nickname), cleanPassword(req.body?.password)); if (!account) return res.status(401).json({ ok: false, error: '비밀번호가 다릅니다.' }); const token = await accounts.createSession(account.id); setSessionCookie(res, token); res.json({ ok: true, account }); }
-    catch (error) { res.status(400).json({ ok: false, error: error instanceof Error ? error.message : '로그인에 실패했습니다.' }); }
+  app.get('/api/ranking', async (req, res) => {
+    try { if (!await verifySession(req.headers.cookie)) return res.status(401).json({ ok: false, error: '로그인이 필요합니다.' }); }
+    catch { return res.status(503).json({ ok: false, error: '잠시 후 다시 시도해주세요.' }); }
+    await ready; res.json({ ok: true, ranking: await accounts.leaderboard() });
   });
-  app.post('/api/auth/logout', async (req, res) => { const token = readCookie(req.headers.cookie); if (token) await accounts.logout(token); res.setHeader('Set-Cookie', `${cookieName}=; Path=${base}; HttpOnly; SameSite=Lax; Max-Age=0`); res.json({ ok: true }); });
-  app.get('/api/me', async (req, res) => { const token = readCookie(req.headers.cookie); const account = token ? await accounts.authenticate(token) : null; if (!account) return res.status(401).json({ ok: false }); res.json({ ok: true, account }); });
-  app.get('/api/ranking', async (_req, res) => { await ready; res.json({ ok: true, ranking: await accounts.leaderboard() }); });
   io.use((socket, next) => {
     void (async () => {
       try {
         await ready;
-        const sessionToken = readCookie(socket.handshake.headers.cookie);
-        const account = sessionToken ? await accounts.authenticate(sessionToken) : null;
-        if (account) { socket.data.token = account.id; socket.data.nickname = account.nickname; socket.data.account = account; return next(); }
+        const account = await memberFor(socket.handshake.headers.cookie);
+        if (account) { socket.data.token = account.id; socket.data.nickname = account.nickname; socket.data.account = account; socket.data.homeCookie = readHomeToken(socket.handshake.headers.cookie); return next(); }
         if (!options.allowLegacyAuth) throw new Error('로그인이 필요합니다.');
         const { token, nickname } = socket.handshake.auth;
         if (typeof token !== 'string' || !/^[a-f0-9-]{36}$/.test(token)) throw new Error('접속 정보가 올바르지 않습니다.');
@@ -265,14 +286,40 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
     }
   }, options.tickIntervalMs ?? 100);
   interval.unref();
-  app.use((req, res, next) => {
-    void handleNightfallRequest(req, res).then((handled: boolean) => { if (!handled) next(); }).catch(next);
+  // Signed out or deleted on the homepage → drop the live connection too.
+  const recheck = setInterval(() => {
+    for (const socket of io.sockets.sockets.values()) {
+      const token = socket.data.homeCookie as string | null | undefined;
+      if (!token) continue;
+      verifySession(`wj_session=${token}`).then(user => { if (!user) { socket.emit('signedOut'); socket.disconnect(true); } }).catch(() => undefined);
+    }
+  }, 60_000);
+  recheck.unref();
+  const kick = (accountId: string) => {
+    const session = sessions.get(accountId);
+    const socket = session?.socketId ? io.sockets.sockets.get(session.socketId) : null;
+    if (socket) { socket.emit('signedOut'); socket.disconnect(true); }
+  };
+  // Homepage admin dashboard → GET (record), PUT { nickname }, DELETE. Shared secret, local only.
+  app.use('/internal', (req, res, next) => { if (!internalAllowed(req.headers, internalToken)) return res.status(404).json({ error: 'not found' }); next(); });
+  app.get('/internal/users/:id', async (req, res) => { await ready; res.json({ ok: true, record: await accounts.stats(req.params.id) }); });
+  app.put('/internal/users/:id', async (req, res) => {
+    await ready;
+    const nickname = typeof req.body?.nickname === 'string' ? req.body.nickname.trim().slice(0, 12) : '';
+    if (!nickname) return res.status(400).json({ error: 'nickname required' });
+    verifySession.forget?.(req.params.id);
+    const changed = await accounts.rename(req.params.id, nickname);
+    const session = sessions.get(req.params.id);
+    if (session && !session.room) { session.nickname = nickname; session.stats = { ...session.stats, nickname }; directory(); }
+    res.json({ ok: true, changed });
   });
+  // Signed out on the homepage by the admin (forced logout or new password) → drop the live connection now.
+  app.post('/internal/users/:id/logout', async (req, res) => { verifySession.forget?.(req.params.id); kick(req.params.id); res.json({ ok: true }); });
+  app.delete('/internal/users/:id', async (req, res) => { await ready; verifySession.forget?.(req.params.id); kick(req.params.id); res.json({ ok: true, removed: await accounts.remove(req.params.id) }); });
   app.get('/api/health', (_req, res) => res.json({ ok: true, rooms: rooms.size }));
-  const dist = path.resolve(process.cwd(), 'dist');
   app.use(express.static(dist, { setHeaders: (res, file) => { if (file.endsWith('index.html')) res.setHeader('Cache-Control', 'no-store'); } }));
   app.get('/{*path}', (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.sendFile(path.join(dist, 'index.html')); });
-  return { http, io, rooms, ready, accounts, close: async () => { clearInterval(interval); await nightfall.close(); await new Promise<void>(resolve => io.close(() => resolve())); await accounts.close(); } };
+  return { http, io, rooms, ready, accounts, close: async () => { clearInterval(interval); clearInterval(recheck); await new Promise<void>(resolve => io.close(() => resolve())); await accounts.close(); } };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

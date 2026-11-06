@@ -220,3 +220,4 @@
 :root[data-theme="dark"] .whisper-message>p{background:#293a45;color:#e0e9ef}:root[data-theme="dark"] .whisper-message.mine>p{background:#304b38;color:#e1ede3}
 :root[data-theme="dark"] .locked-room-badge{background:#4b3b20;border-color:#856b36;color:#f1d394}
 :root[data-theme="dark"] .kick-button{background:#402724;border-color:#74443f;color:#f0aaa2}
+.auth-status{display:flex;flex-direction:column;gap:10px}.auth-status .auth-submit{margin-top:0}

@@ -20,6 +20,7 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
   const whispers = new Map<number, WhisperMessage[]>();
   const whisperClosures = new Map<number, string>();
   const kicks = new Map<number, string>();
+  const builds = new Map<number, string>();
   async function connect(index: number, token: string = randomUUID()) {
     tokens[index] = token;
     const s = client(url, { auth: { token, nickname: `테스트${index}` }, forceNew: true }); sockets.push(s);
@@ -32,6 +33,7 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     s.on('whisperMessage', ({ message }) => whispers.set(index, [...(whispers.get(index) ?? []), message]));
     s.on('whisperClosed', ({ nickname }) => whisperClosures.set(index, nickname));
     s.on('kicked', ({ roomName }) => kicks.set(index, roomName));
+    s.on('build', build => builds.set(index, build));
     await new Promise<void>((resolve, reject) => { s.once('connect', resolve); s.once('connect_error', reject); });
     return s;
   }
@@ -46,6 +48,9 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
   try {
     const players = await Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map(i => connect(i)));
     await waitFor(() => onlineViews.get(0)?.length === 8);
+    // every connection is told which screen build the server hands out (an old open page reloads on a new one)
+    await waitFor(() => builds.size === 8);
+    assert.equal(new Set(builds.values()).size, 1);
     assert.ok(onlineViews.get(0)?.every(user => user.status === 'waiting'));
     assert.equal((await send(players[7], 'lobbyChat', { text: '로비 전체 인사' })).ok, true);
     await waitFor(() => lobbyViews.get(0)?.at(-1)?.text === '로비 전체 인사');

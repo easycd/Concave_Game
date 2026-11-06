@@ -143,6 +143,14 @@ export default function App() {
     if (!entered) return;
     const s = io({ path: `${BASE}socket.io`, reconnectionDelay: 500, reconnectionDelayMax: 2000 }); socket.current = s;
     s.on('connect', () => setConnected(true));
+    // The server was updated while this page stayed open: load the new screen (once per build, so a stubborn cache can't loop).
+    let firstBuild: string | null = null;
+    s.on('build', (build: string) => {
+      if (firstBuild === null) { firstBuild = build; return; }
+      if (build === firstBuild) return;
+      try { if (sessionStorage.getItem('omok-reloaded') === build) return; sessionStorage.setItem('omok-reloaded', build); } catch { return; }
+      location.reload();
+    });
     s.on('disconnect', () => { setConnected(false); setPending(false); });
     s.on('connect_error', e => { setConnected(false); notice(e.message === 'xhr poll error' ? '서버에 연결할 수 없습니다. 연결을 다시 시도합니다.' : e.message); });
     s.on('signedOut', () => { s.disconnect(); homeLogin(); });

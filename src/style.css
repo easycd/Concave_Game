@@ -221,3 +221,4 @@
 :root[data-theme="dark"] .locked-room-badge{background:#4b3b20;border-color:#856b36;color:#f1d394}
 :root[data-theme="dark"] .kick-button{background:#402724;border-color:#74443f;color:#f0aaa2}
 .auth-status{display:flex;flex-direction:column;gap:10px}.auth-status .auth-submit{margin-top:0}
+.header-left{display:flex;align-items:center;gap:12px;min-width:0}.site-home{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:36px;height:36px;min-height:36px;padding:0;text-decoration:none}@media(max-width:650px){.header-left{gap:8px}.site-home{width:33px;height:33px;min-height:33px}}

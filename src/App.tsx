@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crown, Eye, Flag, Lock, LogOut, MessageCircle, MessageSquare, Moon, Plus, Radio, Send, Shield, Sun, Trophy, UserMinus, UserPlus, Users, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crown, Eye, Flag, House, Lock, LogOut, MessageCircle, MessageSquare, Moon, Plus, Radio, Send, Shield, Sun, Trophy, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import { type AccountStats, type AuthReply, type ChatMessage, type Gesture, type Mode, type OnlineUser, type RuleSet, type Player, type Reply, type RoomInvite, type RoomState, type RoomSummary, type WhisperMessage, seatsFor, teamOf } from './shared';
 
 /** 게임이 올라간 경로 (예: /omok/). vite.config.ts 의 base 와 같음 */
@@ -18,6 +18,10 @@ type Theme = 'light' | 'dark';
 function Brand({ small = false, onHome }: { small?: boolean; onHome?: () => void }) {
   const content = <><span className="brand-mark"><i /><i /></span><span>오목</span></>;
   return <a href={BASE} className={`brand brand-home ${small ? 'small' : ''}`} aria-label="오목 메인 페이지로 이동" onClick={e => { if (onHome) { e.preventDefault(); onHome(); } }}>{content}</a>;
+}
+/** 왼쪽 위: 홈페이지(JAEWON 메인)로 돌아가기 */
+function SiteHome() {
+  return <a href={HOME} className="theme-toggle site-home" aria-label="홈페이지로 돌아가기" title="홈페이지로"><House size={17} /></a>;
 }
 function Stone({ color, small = false }: { color: 'black' | 'white'; small?: boolean }) { return <span className={`stone ${color} ${small ? 'tiny' : ''}`} />; }
 function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }) {
@@ -293,7 +297,7 @@ export default function App() {
   const turnOrder = room?.blackTeam === 1 ? (room.mode === '2v2' ? [1, 0, 3, 2] : [1, 0]) : room?.mode === '2v2' ? [0, 1, 2, 3] : [0, 1];
 
   if (!entered) return <div className="welcome-page">
-    <header className="welcome-header"><Brand /><div className="welcome-header-actions"><span className="quiet">한 수, 그리고 우리 사이.</span><ThemeToggle theme={theme} onToggle={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} /></div></header>
+    <header className="welcome-header"><div className="header-left"><SiteHome /><Brand /></div><div className="welcome-header-actions"><span className="quiet">한 수, 그리고 우리 사이.</span><ThemeToggle theme={theme} onToggle={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} /></div></header>
     <main className="welcome-main">
       <section className="welcome-copy"><span className="eyebrow"><span className="live-dot" /> 함께 두는 온라인 오목</span><h1>좋은 한 수는,<br />함께할 때 <em>시작돼요.</em></h1><p>친구와 마주 앉아 한 판.<br />둘이서, 또는 넷이서. 돌 하나에 마음을 담아보세요.</p>
         <div className="nickname-form auth-form auth-status" role="status" aria-live="polite">{authError ? <><p className="auth-error" role="alert">{authError}</p><button className="primary auth-submit" type="button" onClick={() => void checkSession()}>다시 시도 <ArrowRight size={18} /></button><button className="secondary auth-submit" type="button" onClick={homeLogin}>홈페이지에서 로그인</button></> : <p className="quiet">홈페이지 로그인 정보를 확인하고 있어요…</p>}</div>
@@ -304,7 +308,7 @@ export default function App() {
   </div>;
 
   return <div className="app">
-    <header className="app-header"><Brand small onHome={() => void goHome()} /><div className="header-right"><ThemeToggle theme={theme} onToggle={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} /><button className="history-button" aria-label={historyOpen ? "게임으로 돌아가기" : `대국 기록 ${records.length}개 보기`} onClick={() => setHistoryOpen(!historyOpen)}><span className="history-long">{historyOpen ? "게임으로" : `대국 기록 (${records.length})`}</span><span className="history-short">{historyOpen ? "게임" : "기록"}</span></button><span className={`connection ${connected ? '' : 'offline'}`}><span className="live-dot" />{connected ? '실시간 연결' : '재연결 중'}</span><span className="profile-avatar">{nickname.slice(0, 1)}</span><span className="profile-name">{nickname}</span><button className="logout-button" onClick={() => void logout()}><LogOut size={15} /> 로그아웃</button></div></header>
+    <header className="app-header"><div className="header-left"><SiteHome /><Brand small onHome={() => void goHome()} /></div><div className="header-right"><ThemeToggle theme={theme} onToggle={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} /><button className="history-button" aria-label={historyOpen ? "게임으로 돌아가기" : `대국 기록 ${records.length}개 보기`} onClick={() => setHistoryOpen(!historyOpen)}><span className="history-long">{historyOpen ? "게임으로" : `대국 기록 (${records.length})`}</span><span className="history-short">{historyOpen ? "게임" : "기록"}</span></button><span className={`connection ${connected ? '' : 'offline'}`}><span className="live-dot" />{connected ? '실시간 연결' : '재연결 중'}</span><span className="profile-avatar">{nickname.slice(0, 1)}</span><span className="profile-name">{nickname}</span><button className="logout-button" onClick={() => void logout()}><LogOut size={15} /> 로그아웃</button></div></header>
     {!connected && <div className="connection-banner">연결을 다시 시도하고 있습니다. 20초 안에 재연결하면 기존 자리로 돌아옵니다. 대국 시간은 계속 흐릅니다.</div>}
     {historyOpen ? <HistoryPage records={records} onBack={() => setHistoryOpen(false)} /> : !room ? <main className="lobby-page">
       <div className="page-intro"><div><span className="eyebrow">THE LOBBY</span><h1>오늘은 누구와 둘까요?</h1><p>새로운 방을 만들거나, 친구의 방에 들어가세요.</p></div><button className="primary" onClick={() => setCreating(true)} disabled={!connected}><Plus size={18} /> 방 만들기</button></div>

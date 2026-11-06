@@ -100,3 +100,13 @@ npm run test:deployment
 - 로그인 세션은 30일짜리 HttpOnly 보안 쿠키로 저장합니다. 잠깐의 연결 끊김이나 새로고침 후 같은 자리로 복귀할 수 있으며 서버에 해당 방이 남아 있어야 합니다.
 - 현재 대국과 실시간 방 상태는 단일 서버 인스턴스의 메모리를 사용하므로 여러 서버 인스턴스 간에는 공유되지 않습니다.
 - 무료 Render 서버는 15분 동안 수신 트래픽이 없으면 대기 상태가 되며 다음 접속에서 시작 지연이 발생할 수 있습니다. [Render 무료 서비스 안내](https://render.com/docs/free)
+
+## 개인 서버에서 경로 아래로 실행 (wodnjs.com/omok)
+
+Render 없이 한 서버에서 `https://도메인/omok/` 처럼 경로 아래로 돌릴 때 쓰는 환경 변수입니다. 하나도 주지 않으면 지금처럼 `/`에서 돕니다.
+
+| 변수 | 예 | 설명 |
+| --- | --- | --- |
+| `BASE_PATH` | `/omok` | 빌드(`BASE_PATH=/omok npm run build`)와 실행 모두에 같은 값을 줍니다. 화면·API·Socket.IO·쿠키가 이 경로 아래로 갑니다. |
+| `HOST` | `127.0.0.1` | 받을 주소. 기본 `0.0.0.0` |
+| `OMOK_DATA_DIR` | `/var/lib/webgames/omok` | `DATABASE_URL`이 없을 때 계정·세션·전적을 이 폴더의 `accounts.json`에 저장합니다. NIGHTFALL도 같은 계정을 씁니다. |

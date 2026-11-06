@@ -6,17 +6,32 @@ import path from 'node:path';
 import { Server } from 'socket.io';
 import { GameRoom } from './game.js';
 import { type AccountStats, type ChatMessage, type OnlineUser, type Reply, type RoomInvite, type RoomSummary, type WhisperMessage } from '../src/shared.js';
-import { createAccountStore, type AccountStore } from './accounts.js';
+import { createAccountStore, persistentAccounts, type AccountStore } from './accounts.js';
+
+/** 게임을 올릴 주소 경로. 예: BASE_PATH=/omok → https://도메인/omok/ . 없으면 맨 앞(/) */
+export const basePath = (value = process.env.BASE_PATH ?? '/') => `/${value.replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
 
 const { createNightfall, handleNightfallRequest } = await import(pathToFileURL(path.resolve(process.cwd(), 'nightfall/server.js')).href);
 
 export function createGameServer(options: { accountStore?: AccountStore; allowLegacyAuth?: boolean; tickIntervalMs?: number } = {}) {
+  const base = basePath();
   const app = express();
-  const http = createServer(app);
-  const io = new Server(http, { maxHttpBufferSize: 16_384 });
+  const root = express();
+  root.disable('x-powered-by'); app.disable('x-powered-by');
+  if (base !== '/') {
+    const bare = base.slice(0, -1);
+    root.use((req, res, next) => {
+      const [pathname, query] = req.originalUrl.split(/\?(.*)/s);
+      if (pathname !== bare) return next();
+      res.redirect(301, base + (query ? `?${query}` : ''));
+    });
+  }
+  root.use(base, app);
+  const http = createServer(root);
+  const io = new Server(http, { maxHttpBufferSize: 16_384, path: `${base}socket.io` });
   const accounts = options.accountStore ?? createAccountStore();
   const ready = accounts.init();
-  const nightfall = createNightfall(io, { accountStore: process.env.DATABASE_URL ? accounts : undefined, ready, allowGuest: options.allowLegacyAuth === true });
+  const nightfall = createNightfall(io, { accountStore: persistentAccounts() ? accounts : undefined, ready, allowGuest: options.allowLegacyAuth === true });
   const rooms = new Map<string, GameRoom>();
   const sessions = new Map<string, { nickname: string; stats: AccountStats; room: string | null; socketId: string | null; disconnectedAt: number | null; lastAction: number }>();
   const whispers = new Map<string, { members: [string, string] }>();
@@ -68,7 +83,7 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
   };
   const cookieName = 'gomoku_session';
   const readCookie = (header = '') => Object.fromEntries(header.split(';').map(part => part.trim().split('=').map(decodeURIComponent)).filter(pair => pair.length === 2))[cookieName];
-  const setSessionCookie = (res: express.Response, token: string) => res.setHeader('Set-Cookie', `${cookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+  const setSessionCookie = (res: express.Response, token: string) => res.setHeader('Set-Cookie', `${cookieName}=${encodeURIComponent(token)}; Path=${base}; HttpOnly; SameSite=Lax; Max-Age=2592000${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
   app.use(express.json({ limit: '2kb' }));
   app.post('/api/auth/register', async (req, res) => {
     try { await ready; const account = await accounts.register(cleanNickname(req.body?.nickname), cleanPassword(req.body?.password)); const token = await accounts.createSession(account.id); setSessionCookie(res, token); res.status(201).json({ ok: true, account }); }
@@ -78,7 +93,7 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
     try { await ready; const account = await accounts.login(cleanNickname(req.body?.nickname), cleanPassword(req.body?.password)); if (!account) return res.status(401).json({ ok: false, error: '비밀번호가 다릅니다.' }); const token = await accounts.createSession(account.id); setSessionCookie(res, token); res.json({ ok: true, account }); }
     catch (error) { res.status(400).json({ ok: false, error: error instanceof Error ? error.message : '로그인에 실패했습니다.' }); }
   });
-  app.post('/api/auth/logout', async (req, res) => { const token = readCookie(req.headers.cookie); if (token) await accounts.logout(token); res.setHeader('Set-Cookie', `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`); res.json({ ok: true }); });
+  app.post('/api/auth/logout', async (req, res) => { const token = readCookie(req.headers.cookie); if (token) await accounts.logout(token); res.setHeader('Set-Cookie', `${cookieName}=; Path=${base}; HttpOnly; SameSite=Lax; Max-Age=0`); res.json({ ok: true }); });
   app.get('/api/me', async (req, res) => { const token = readCookie(req.headers.cookie); const account = token ? await accounts.authenticate(token) : null; if (!account) return res.status(401).json({ ok: false }); res.json({ ok: true, account }); });
   app.get('/api/ranking', async (_req, res) => { await ready; res.json({ ok: true, ranking: await accounts.leaderboard() }); });
   io.use((socket, next) => {
@@ -262,7 +277,7 @@ export function createGameServer(options: { accountStore?: AccountStore; allowLe
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const game = createGameServer(); const port = Number(process.env.PORT) || 3001;
-  void game.ready.then(() => game.http.listen(port, '0.0.0.0', () => console.log(`오목 서버: http://localhost:${port}`))).catch(error => { console.error('서버 초기화 실패:', error); process.exit(1); });
+  void game.ready.then(() => game.http.listen(port, process.env.HOST || '0.0.0.0', () => console.log(`오목 서버: http://${process.env.HOST || 'localhost'}:${port}${basePath()}`))).catch(error => { console.error('서버 초기화 실패:', error); process.exit(1); });
   let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return;

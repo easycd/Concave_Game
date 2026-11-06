@@ -21,17 +21,17 @@ test(deployedUrl ? 'deployed server serves health, frontend and static assets' :
     await verifyFrontend(deployedUrl);
     return;
   }
-  const server = createGameServer();
+  // Stand-in for the homepage login (wodnjs.com): cookie token → member
+  const members = new Map([['a'.repeat(64), { id: '11111111-1111-4111-8111-111111111111', name: '검증1', nickname: '운영검증1' }], ['b'.repeat(64), { id: '22222222-2222-4222-8222-222222222222', name: '검증2', nickname: '운영검증2' }]]);
+  const server = createGameServer({ verifySession: async cookie => members.get(/wj_session=([a-f0-9]{64})/.exec(cookie ?? '')?.[1]) ?? null });
   const clients = [];
   try {
     await server.ready;
     await new Promise(resolve => server.http.listen(0, '127.0.0.1', resolve));
     const url = `http://127.0.0.1:${server.http.address().port}`;
     await verifyFrontend(url);
-    for (const [index, nickname] of ['운영검증1', '운영검증2'].entries()) {
-      const registration = await fetch(`${url}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nickname, password: `verify${index + 1}` }) });
-      assert.equal(registration.status, 201);
-      const cookie = registration.headers.get('set-cookie').split(';')[0];
+    for (const token of members.keys()) {
+      const cookie = `wj_session=${token}`;
       const socket = io(url, { transports: ['websocket'], forceNew: true, extraHeaders: { Cookie: cookie } });
       clients.push(socket);
       await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('connect_error', reject); });

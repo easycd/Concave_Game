@@ -5,6 +5,9 @@ import { type AccountStats, type AuthReply, type ChatMessage, type Gesture, type
 
 /** 게임이 올라간 경로 (예: /omok/). vite.config.ts 의 base 와 같음 */
 const BASE = import.meta.env.BASE_URL;
+/** 로그인은 홈페이지(wodnjs.com)에서 해요. 로그인 안 된 채로 오면 홈페이지 로그인 창으로 보내고, 끝나면 여기로 돌아와요. */
+const HOME = import.meta.env.VITE_HOME_URL || '/';
+const homeLogin = () => { location.assign(`${HOME}?login=1&next=${encodeURIComponent(location.pathname + location.search)}`); };
 const phaseLabel = { lobby: '대기 중', rps: '가위바위보', playing: '대국 중', finished: '대국 종료' };
 const gestures: { value: Gesture; label: string; symbol: string }[] = [{ value: 'scissors', label: '가위', symbol: '✌️' }, { value: 'rock', label: '바위', symbol: '✊' }, { value: 'paper', label: '보', symbol: '🖐️' }];
 const invitedCode = new URLSearchParams(location.search).get('room')?.toUpperCase() ?? '';
@@ -25,10 +28,7 @@ function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }
 export default function App() {
   const [theme, setTheme] = useState<Theme>(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
   const [nickname, setNickname] = useState('');
-  const [password, setPassword] = useState('');
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authError, setAuthError] = useState('');
-  const [authPending, setAuthPending] = useState(false);
   const [account, setAccount] = useState<AccountStats | null>(null);
   const [ranking, setRanking] = useState<AccountStats[]>([]);
   const [entered, setEntered] = useState(false);
@@ -101,6 +101,17 @@ export default function App() {
     } catch { /* Socket reconnection UI already reports temporary network loss. */ }
   }
   useEffect(() => { if (entered) void refreshAccount(); }, [entered]);
+  async function checkSession() {
+    setAuthError('');
+    try {
+      const response = await fetch(`${BASE}api/me`, { cache: 'no-store' });
+      if (response.status === 401) { homeLogin(); return; }
+      const data = await response.json() as AuthReply;
+      if (!response.ok || !data.account) { setAuthError(data.error ?? '로그인 정보를 확인하지 못했습니다.'); return; }
+      setAccount(data.account); setNickname(data.account.nickname); setEntered(true);
+    } catch { setAuthError('서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.'); }
+  }
+  useEffect(() => { void checkSession(); }, []);
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [entered, room?.code, historyOpen]);
@@ -130,6 +141,7 @@ export default function App() {
     s.on('connect', () => setConnected(true));
     s.on('disconnect', () => { setConnected(false); setPending(false); });
     s.on('connect_error', e => { setConnected(false); notice(e.message === 'xhr poll error' ? '서버에 연결할 수 없습니다. 연결을 다시 시도합니다.' : e.message); });
+    s.on('signedOut', () => { s.disconnect(); homeLogin(); });
     s.on('identity', ({ id, nickname: name }: { id: string; nickname: string }) => { setIdentity(id); setNickname(name); });
     s.on('rooms', setRooms);
     s.on('onlineUsers', setOnlineUsers);
@@ -236,17 +248,6 @@ export default function App() {
     socket.current?.emit('whisperClose', { targetId: peerId }, () => undefined);
     setWhisperWindows(previous => previous.filter(window => window.peerId !== peerId));
   }
-  async function enter(e: FormEvent) {
-    e.preventDefault(); if (!nickname.trim() || password.length < 6 || authPending) return;
-    setAuthPending(true); setAuthError('');
-    try {
-      const response = await fetch(`${BASE}api/auth/${authMode}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nickname: nickname.trim(), password }) });
-      const data = await response.json() as AuthReply;
-      if (!response.ok || !data.account) { setAuthError(data.error ?? '요청을 처리하지 못했습니다.'); return; }
-      setAccount(data.account); setNickname(data.account.nickname); setPassword(''); setEntered(true);
-    } catch { setAuthError('서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.'); }
-    finally { setAuthPending(false); }
-  }
   async function goHome() {
     const activeSocket = socket.current;
     if (room && activeSocket?.connected) await new Promise<void>(resolve => {
@@ -258,9 +259,9 @@ export default function App() {
   }
   async function logout() {
     if (room) await goHome();
-    await fetch(`${BASE}api/auth/logout`, { method: 'POST' }).catch(() => undefined);
     socket.current?.disconnect(); socket.current = null;
-    setEntered(false); setConnected(false); setAccount(null); setRanking([]); setPassword(''); setAuthError(''); setWhisperWindows([]); setRoomInvite(null);
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    location.assign(HOME);
   }
   async function copyRoomCode() {
     try { await navigator.clipboard.writeText(room!.code); notice('방 코드 6자리를 복사했습니다.'); }
@@ -295,7 +296,7 @@ export default function App() {
     <header className="welcome-header"><Brand /><div className="welcome-header-actions"><span className="quiet">한 수, 그리고 우리 사이.</span><ThemeToggle theme={theme} onToggle={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} /></div></header>
     <main className="welcome-main">
       <section className="welcome-copy"><span className="eyebrow"><span className="live-dot" /> 함께 두는 온라인 오목</span><h1>좋은 한 수는,<br />함께할 때 <em>시작돼요.</em></h1><p>친구와 마주 앉아 한 판.<br />둘이서, 또는 넷이서. 돌 하나에 마음을 담아보세요.</p>
-        <form className="nickname-form auth-form" onSubmit={enter}><div className="auth-tabs"><button type="button" className={authMode === 'login' ? 'selected' : ''} onClick={() => { setAuthMode('login'); setAuthError(''); }}>로그인</button><button type="button" className={authMode === 'register' ? 'selected' : ''} onClick={() => { setAuthMode('register'); setAuthError(''); }}>처음 계정 만들기</button></div><label htmlFor="nickname">닉네임</label><input id="nickname" autoFocus value={nickname} onChange={e => { setNickname(e.target.value); setAuthError(''); }} maxLength={12} autoComplete="username" placeholder="닉네임을 입력해주세요" required /><label htmlFor="password">비밀번호</label><div className="password-field"><Lock size={17} /><input id="password" type="password" value={password} onChange={e => { setPassword(e.target.value); setAuthError(''); }} minLength={6} maxLength={72} autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} placeholder="6자 이상 입력해주세요" required /></div>{authError && <p className="auth-error" role="alert">{authError}</p>}<button className="primary auth-submit" disabled={!nickname.trim() || password.length < 6 || authPending}>{authPending ? '확인 중…' : authMode === 'login' ? '로그인' : '계정 만들기'} <ArrowRight size={18} /></button><span className="quiet">닉네임 최대 12자 · 비밀번호 6~72자</span></form>
+        <div className="nickname-form auth-form auth-status" role="status" aria-live="polite">{authError ? <><p className="auth-error" role="alert">{authError}</p><button className="primary auth-submit" type="button" onClick={() => void checkSession()}>다시 시도 <ArrowRight size={18} /></button><button className="secondary auth-submit" type="button" onClick={homeLogin}>홈페이지에서 로그인</button></> : <p className="quiet">홈페이지 로그인 정보를 확인하고 있어요…</p>}</div>
         <div className="welcome-features"><span><Users size={17} /> 1대1 & 2대2</span><span><MessageCircle size={17} /> 실시간 채팅</span><span><Eye size={17} /> 함께 관전</span></div>
       </section>
       <div className="welcome-art"><div className="art-caption"><span>LET’S PLAY, TOGETHER</span><span>01 — 15</span></div><div className="mini-board"><img src={`${BASE}board.png`} alt="첨부해주신 디자인의 15줄 오목판" />{[[7, 7, 'black'], [8, 7, 'white'], [6, 8, 'black'], [8, 6, 'white'], [5, 9, 'black']].map(([x, y, color], i) => <div className="art-stone" key={i} style={{ left: `${(77 + Number(x) * 48) / 822 * 100}%`, top: `${(77 + Number(y) * 48) / 822 * 100}%` }}><Stone color={color as 'black' | 'white'} /></div>)}</div><div className="art-note"><span className="live-dot" /> 작은 돌 하나, 새로운 대화 하나.</div></div>

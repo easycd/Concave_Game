@@ -1,7 +1,6 @@
-import bcrypt from 'bcryptjs';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import pg from 'pg';
+// Omok records (wins / losses / draws) per homepage member. Login itself is on the homepage (see homeAuth.ts).
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { Mode, Team } from '../src/shared.js';
 
@@ -15,185 +14,87 @@ export interface AccountStats {
   winRate: number;
 }
 
+interface Profile { id: string; nickname: string; wins: number; losses: number; draws: number; createdAt: number }
+
 export interface AccountStore {
   init(): Promise<void>;
-  register(nickname: string, password: string): Promise<AccountStats>;
-  login(nickname: string, password: string): Promise<AccountStats | null>;
-  createSession(accountId: string): Promise<string>;
-  authenticate(token: string): Promise<AccountStats | null>;
-  logout(token: string): Promise<void>;
+  /** Create the record on first visit; keep the nickname in step with the homepage. */
+  ensure(user: { id: string; nickname: string }): Promise<AccountStats>;
   stats(accountId: string): Promise<AccountStats | null>;
   leaderboard(): Promise<AccountStats[]>;
   recordGame(gameId: string, mode: Mode, winner: Team | null, players: { id: string; team: Team }[]): Promise<boolean>;
+  rename(accountId: string, nickname: string): Promise<boolean>;
+  remove(accountId: string): Promise<boolean>;
   close(): Promise<void>;
 }
 
-const toStats = (row: Record<string, unknown>): AccountStats => {
-  const wins = Number(row.wins), losses = Number(row.losses), draws = Number(row.draws);
-  const games = wins + losses + draws;
-  return { id: String(row.id), nickname: String(row.nickname), wins, losses, draws, games, winRate: games ? Math.round(wins / games * 1000) / 10 : 0 };
+const toStats = (p: Profile): AccountStats => {
+  const games = p.wins + p.losses + p.draws;
+  return { id: p.id, nickname: p.nickname, wins: p.wins, losses: p.losses, draws: p.draws, games, winRate: games ? Math.round(p.wins / games * 1000) / 10 : 0 };
 };
-const tokenHash = (token: string) => createHash('sha256').update(token).digest('hex');
 
 export class MemoryAccountStore implements AccountStore {
-  protected users = new Map<string, AccountStats & { passwordHash: string }>();
-  protected sessions = new Map<string, string>();
+  protected profiles = new Map<string, Profile>();
   protected games = new Set<string>();
+  protected changed(): Promise<void> { return Promise.resolve(); }
   async init() {}
-  async register(nickname: string, password: string) {
-    if ([...this.users.values()].some(user => user.nickname.toLocaleLowerCase('ko-KR') === nickname.toLocaleLowerCase('ko-KR'))) throw new Error('중복된 닉네임입니다.');
-    const account = { id: randomUUID(), nickname, passwordHash: await bcrypt.hash(password, 10), wins: 0, losses: 0, draws: 0, games: 0, winRate: 0 };
-    this.users.set(account.id, account); return toStats(account as unknown as Record<string, unknown>);
+  async ensure(user: { id: string; nickname: string }) {
+    let profile = this.profiles.get(user.id);
+    if (!profile) { profile = { id: user.id, nickname: user.nickname, wins: 0, losses: 0, draws: 0, createdAt: Date.now() }; this.profiles.set(user.id, profile); await this.changed(); }
+    else if (profile.nickname !== user.nickname) { profile.nickname = user.nickname; await this.changed(); }
+    return toStats(profile);
   }
-  async login(nickname: string, password: string) {
-    const account = [...this.users.values()].find(user => user.nickname.toLocaleLowerCase('ko-KR') === nickname.toLocaleLowerCase('ko-KR'));
-    return account && await bcrypt.compare(password, account.passwordHash) ? toStats(account as unknown as Record<string, unknown>) : null;
+  async stats(accountId: string) { const p = this.profiles.get(accountId); return p ? toStats(p) : null; }
+  async leaderboard() {
+    return [...this.profiles.values()].filter(p => p.wins + p.losses + p.draws > 0).map(toStats)
+      .sort((a, b) => b.wins - a.wins || a.losses - b.losses || a.nickname.localeCompare(b.nickname, 'ko')).slice(0, 10);
   }
-  async createSession(accountId: string) { const token = randomBytes(32).toString('hex'); this.sessions.set(tokenHash(token), accountId); return token; }
-  async authenticate(token: string) { const id = this.sessions.get(tokenHash(token)); return id ? this.stats(id) : null; }
-  async logout(token: string) { this.sessions.delete(tokenHash(token)); }
-  async stats(accountId: string) { const account = this.users.get(accountId); return account ? toStats(account as unknown as Record<string, unknown>) : null; }
-  async leaderboard() { return [...this.users.values()].map(account => toStats(account as unknown as Record<string, unknown>)).sort((a, b) => b.wins - a.wins || a.losses - b.losses || a.nickname.localeCompare(b.nickname, 'ko')).slice(0, 10); }
   async recordGame(gameId: string, _mode: Mode, winner: Team | null, players: { id: string; team: Team }[]) {
-    if (this.games.has(gameId)) return false; this.games.add(gameId);
-    for (const player of new Map(players.map(player => [player.id, player])).values()) {
-      const account = this.users.get(player.id); if (!account) continue;
-      if (winner === null) account.draws++; else if (player.team === winner) account.wins++; else account.losses++;
+    if (this.games.has(gameId)) return false;
+    this.games.add(gameId);
+    for (const player of new Map(players.map(p => [p.id, p])).values()) {
+      const profile = this.profiles.get(player.id); if (!profile) continue;
+      if (winner === null) profile.draws++; else if (player.team === winner) profile.wins++; else profile.losses++;
     }
+    await this.changed();
     return true;
+  }
+  async rename(accountId: string, nickname: string) {
+    const p = this.profiles.get(accountId); if (!p) return false;
+    p.nickname = nickname; await this.changed(); return true;
+  }
+  async remove(accountId: string) {
+    const existed = this.profiles.delete(accountId);
+    if (existed) await this.changed();
+    return existed;
   }
   async close() {}
 }
 
-/** JSON 파일 하나에 계정·세션·전적을 저장한다. 개인 서버처럼 PostgreSQL 없이 한 대로 돌릴 때 쓴다. */
+/** Same as memory, but every change is written atomically to one JSON file. */
 export class FileAccountStore extends MemoryAccountStore {
   private queue: Promise<void> = Promise.resolve();
-  private sessionExpiry = new Map<string, number>();
   constructor(private file: string) { super(); }
   async init() {
     try {
-      const saved = JSON.parse(await readFile(this.file, 'utf8')) as { users?: (AccountStats & { passwordHash: string })[]; sessions?: [string, string, number][]; games?: string[] };
-      for (const user of saved.users ?? []) this.users.set(user.id, user);
-      const now = Date.now();
-      for (const [hash, id, expires] of saved.sessions ?? []) if (expires > now) { this.sessions.set(hash, id); this.sessionExpiry.set(hash, expires); }
+      const saved = JSON.parse(await readFile(this.file, 'utf8')) as { profiles?: Profile[]; games?: string[] };
+      for (const p of saved.profiles ?? []) if (p && typeof p.id === 'string') this.profiles.set(p.id, { id: p.id, nickname: String(p.nickname), wins: Number(p.wins) || 0, losses: Number(p.losses) || 0, draws: Number(p.draws) || 0, createdAt: Number(p.createdAt) || Date.now() });
       for (const id of saved.games ?? []) this.games.add(id);
     } catch (error) { if ((error as { code?: string }).code !== 'ENOENT') throw error; }
   }
-  private persist() {
+  protected changed() {
     const job = this.queue.then(async () => {
-      const now = Date.now();
-      for (const [hash, expires] of this.sessionExpiry) if (expires <= now) { this.sessionExpiry.delete(hash); this.sessions.delete(hash); }
-      const data = { users: [...this.users.values()], sessions: [...this.sessions].map(([hash, id]) => [hash, id, this.sessionExpiry.get(hash) ?? now]), games: [...this.games].slice(-5000) };
+      const data = { profiles: [...this.profiles.values()], games: [...this.games].slice(-5000) };
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = `${this.file}.${randomBytes(6).toString('hex')}.tmp`;
       await writeFile(tmp, JSON.stringify(data), { mode: 0o600 });
       await rename(tmp, this.file);
     });
-    this.queue = job.catch(error => console.error('계정 파일 저장 실패:', error instanceof Error ? error.message : error));
+    this.queue = job.catch(error => console.error('전적 파일 저장 실패:', error instanceof Error ? error.message : error));
     return job;
-  }
-  async register(nickname: string, password: string) { const account = await super.register(nickname, password); await this.persist(); return account; }
-  async createSession(accountId: string) {
-    const token = await super.createSession(accountId);
-    this.sessionExpiry.set(tokenHash(token), Date.now() + 30 * 24 * 60 * 60 * 1000);
-    await this.persist(); return token;
-  }
-  async authenticate(token: string) {
-    const expires = this.sessionExpiry.get(tokenHash(token));
-    if (!expires || expires <= Date.now()) return null;
-    return super.authenticate(token);
-  }
-  async logout(token: string) { await super.logout(token); this.sessionExpiry.delete(tokenHash(token)); await this.persist(); }
-  async recordGame(gameId: string, mode: Mode, winner: Team | null, players: { id: string; team: Team }[]) {
-    const recorded = await super.recordGame(gameId, mode, winner, players);
-    if (recorded) await this.persist();
-    return recorded;
   }
   async close() { await this.queue; }
 }
 
-export class PostgresAccountStore implements AccountStore {
-  private pool: pg.Pool;
-  constructor(connectionString: string) { this.pool = new pg.Pool({ connectionString, max: 5, idleTimeoutMillis: 30_000 }); }
-  async init() {
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS accounts (
-        id UUID PRIMARY KEY,
-        nickname VARCHAR(12) NOT NULL,
-        password_hash TEXT NOT NULL,
-        wins INTEGER NOT NULL DEFAULT 0 CHECK (wins >= 0),
-        losses INTEGER NOT NULL DEFAULT 0 CHECK (losses >= 0),
-        draws INTEGER NOT NULL DEFAULT 0 CHECK (draws >= 0),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE UNIQUE INDEX IF NOT EXISTS accounts_nickname_lower_unique ON accounts (LOWER(nickname));
-      CREATE TABLE IF NOT EXISTS account_sessions (
-        token_hash CHAR(64) PRIMARY KEY,
-        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-        expires_at TIMESTAMPTZ NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS ranked_games (
-        game_id UUID PRIMARY KEY,
-        mode VARCHAR(3) NOT NULL,
-        winner SMALLINT,
-        finished_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE TABLE IF NOT EXISTS ranked_game_results (
-        game_id UUID NOT NULL REFERENCES ranked_games(game_id) ON DELETE CASCADE,
-        account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-        outcome VARCHAR(4) NOT NULL,
-        PRIMARY KEY (game_id, account_id)
-      );
-      CREATE INDEX IF NOT EXISTS account_sessions_expiry_idx ON account_sessions (expires_at);
-    `);
-  }
-  async register(nickname: string, password: string) {
-    try {
-      const result = await this.pool.query('INSERT INTO accounts (id, nickname, password_hash) VALUES ($1, $2, $3) RETURNING *', [randomUUID(), nickname, await bcrypt.hash(password, 10)]);
-      return toStats(result.rows[0]);
-    } catch (error) {
-      if ((error as { code?: string }).code === '23505') throw new Error('중복된 닉네임입니다.');
-      throw error;
-    }
-  }
-  async login(nickname: string, password: string) {
-    const result = await this.pool.query('SELECT * FROM accounts WHERE LOWER(nickname) = LOWER($1)', [nickname]);
-    return result.rows[0] && await bcrypt.compare(password, result.rows[0].password_hash) ? toStats(result.rows[0]) : null;
-  }
-  async createSession(accountId: string) {
-    const token = randomBytes(32).toString('hex');
-    await this.pool.query("INSERT INTO account_sessions (token_hash, account_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '30 days')", [tokenHash(token), accountId]);
-    return token;
-  }
-  async authenticate(token: string) {
-    const result = await this.pool.query(`SELECT a.* FROM account_sessions s JOIN accounts a ON a.id = s.account_id WHERE s.token_hash = $1 AND s.expires_at > NOW()`, [tokenHash(token)]);
-    return result.rows[0] ? toStats(result.rows[0]) : null;
-  }
-  async logout(token: string) { await this.pool.query('DELETE FROM account_sessions WHERE token_hash = $1', [tokenHash(token)]); }
-  async stats(accountId: string) { const result = await this.pool.query('SELECT * FROM accounts WHERE id = $1', [accountId]); return result.rows[0] ? toStats(result.rows[0]) : null; }
-  async leaderboard() { const result = await this.pool.query('SELECT * FROM accounts ORDER BY wins DESC, losses ASC, LOWER(nickname) ASC LIMIT 10'); return result.rows.map(toStats); }
-  async recordGame(gameId: string, mode: Mode, winner: Team | null, players: { id: string; team: Team }[]) {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const inserted = await client.query('INSERT INTO ranked_games (game_id, mode, winner) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING game_id', [gameId, mode, winner]);
-      if (!inserted.rowCount) { await client.query('ROLLBACK'); return false; }
-      for (const player of new Map(players.map(player => [player.id, player])).values()) {
-        const outcome = winner === null ? 'draw' : player.team === winner ? 'win' : 'loss';
-        const result = await client.query('INSERT INTO ranked_game_results (game_id, account_id, outcome) SELECT $1, id, $2 FROM accounts WHERE id = $3 ON CONFLICT DO NOTHING RETURNING account_id', [gameId, outcome, player.id]);
-        if (result.rowCount) await client.query(`UPDATE accounts SET wins = wins + $2, losses = losses + $3, draws = draws + $4 WHERE id = $1`, [player.id, outcome === 'win' ? 1 : 0, outcome === 'loss' ? 1 : 0, outcome === 'draw' ? 1 : 0]);
-      }
-      await client.query('COMMIT'); return true;
-    } catch (error) { await client.query('ROLLBACK'); throw error; }
-    finally { client.release(); }
-  }
-  async close() { await this.pool.end(); }
-}
-
-export const createAccountStore = (): AccountStore => {
-  if (process.env.DATABASE_URL) return new PostgresAccountStore(process.env.DATABASE_URL);
-  if (process.env.OMOK_DATA_DIR) return new FileAccountStore(path.resolve(process.env.OMOK_DATA_DIR, 'accounts.json'));
-  return new MemoryAccountStore();
-};
-/** 서버를 다시 켜도 계정이 남는 저장소인지 (NIGHTFALL 이 같은 계정을 쓸지 정할 때 사용) */
-export const persistentAccounts = () => !!(process.env.DATABASE_URL || process.env.OMOK_DATA_DIR);
+export const createAccountStore = (): AccountStore =>
+  process.env.OMOK_DATA_DIR ? new FileAccountStore(path.resolve(process.env.OMOK_DATA_DIR, 'records.json')) : new MemoryAccountStore();

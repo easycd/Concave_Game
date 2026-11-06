@@ -24,6 +24,9 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
     try { return [...readFileSync(path.join(dist, 'index.html'), 'utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => `'sha256-${createHash('sha256').update(m[1]).digest('base64')}'`).join(' '); }
     catch { return ''; }
   })();
+  // Which build of the screen this server hands out (index.html names the hashed bundles). A page opened before an
+  // update receives a different value when it reconnects and reloads itself once.
+  const build = (() => { try { return createHash('sha256').update(readFileSync(path.join(dist, 'index.html'))).digest('hex').slice(0, 12); } catch { return 'dev'; } })();
   const csp = `default-src 'self'; script-src 'self' ${inlineScripts}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`;
   root.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -141,7 +144,7 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
     if (!session.room) session.nickname = socket.data.nickname;
     if (account) session.stats = account;
     session.socketId = socket.id; session.disconnectedAt = null; sessions.set(token, session);
-    socket.emit('identity', { id: token, nickname: session.nickname }); socket.emit('rooms', summaries()); socket.emit('onlineUsers', onlineUsers()); socket.emit('lobbyChatHistory', lobbyChat);
+    socket.emit('build', build); socket.emit('identity', { id: token, nickname: session.nickname }); socket.emit('rooms', summaries()); socket.emit('onlineUsers', onlineUsers()); socket.emit('lobbyChatHistory', lobbyChat);
     const oldRoom = session.room ? rooms.get(session.room) : null;
     if (oldRoom) { oldRoom.player(token).connected = true; socket.join(oldRoom.state.code); broadcast(oldRoom); }
     else { session.room = null; socket.emit('room', null); directory(); }
@@ -317,7 +320,11 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
   app.post('/internal/users/:id/logout', async (req, res) => { verifySession.forget?.(req.params.id); kick(req.params.id); res.json({ ok: true }); });
   app.delete('/internal/users/:id', async (req, res) => { await ready; verifySession.forget?.(req.params.id); kick(req.params.id); res.json({ ok: true, removed: await accounts.remove(req.params.id) }); });
   app.get('/api/health', (_req, res) => res.json({ ok: true, rooms: rooms.size }));
-  app.use(express.static(dist, { setHeaders: (res, file) => { if (file.endsWith('index.html')) res.setHeader('Cache-Control', 'no-store'); } }));
+  // index.html: never cached. assets/: Vite puts a content hash in every name, so they are kept for good.
+  // Everything else (board.png, favicon): always checked again, so an update shows at once.
+  app.use(express.static(dist, { setHeaders: (res, file) => {
+    res.setHeader('Cache-Control', file.endsWith('index.html') ? 'no-store' : file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache');
+  } }));
   app.get('/{*path}', (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.sendFile(path.join(dist, 'index.html')); });
   return { http, io, rooms, ready, accounts, close: async () => { clearInterval(interval); clearInterval(recheck); await new Promise<void>(resolve => io.close(() => resolve())); await accounts.close(); } };
 }

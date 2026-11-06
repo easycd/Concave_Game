@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crown, Eye, Flag, Lock, LogOut, MessageCircle, MessageSquare, Moon, Plus, Radio, Send, Shield, Sun, Trophy, UserMinus, UserPlus, Users, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crown, Eye, Flag, House, Lock, LogOut, MessageCircle, MessageSquare, Moon, Plus, Radio, Send, Shield, Sun, Trophy, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import { type AccountStats, type AuthReply, type ChatMessage, type Gesture, type Mode, type OnlineUser, type RuleSet, type Player, type Reply, type RoomInvite, type RoomState, type RoomSummary, type WhisperMessage, seatsFor, teamOf } from './shared';
 
 /** 게임이 올라간 경로 (예: /omok/). vite.config.ts 의 base 와 같음 */
@@ -18,6 +18,10 @@ type Theme = 'light' | 'dark';
 function Brand({ small = false, onHome }: { small?: boolean; onHome?: () => void }) {
   const content = <><span className="brand-mark"><i /><i /></span><span>오목</span></>;
   return <a href={BASE} className={`brand brand-home ${small ? 'small' : ''}`} aria-label="오목 메인 페이지로 이동" onClick={e => { if (onHome) { e.preventDefault(); onHome(); } }}>{content}</a>;
+}
+/** 왼쪽 위: 홈페이지(JAEWON 메인)로 돌아가기 */
+function SiteHome({ onLeave }: { onLeave?: () => boolean }) {
+  return <a href={HOME} className="theme-toggle site-home" aria-label="홈페이지로 돌아가기" title="홈페이지로" onClick={e => { if (onLeave?.()) e.preventDefault(); }}><House size={17} /></a>;
 }
 function Stone({ color, small = false }: { color: 'black' | 'white'; small?: boolean }) { return <span className={`stone ${color} ${small ? 'tiny' : ''}`} />; }
 function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }) {
@@ -47,7 +51,7 @@ export default function App() {
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState('');
   const [pending, setPending] = useState(false);
-  const [confirm, setConfirm] = useState<'leave' | 'resign' | 'home' | null>(null);
+  const [confirm, setConfirm] = useState<'leave' | 'resign' | 'home' | 'site' | null>(null);
   const [resultReveal, setResultReveal] = useState(false);
   const [rpsReveal, setRpsReveal] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -276,6 +280,7 @@ export default function App() {
   const resultTitle = outcome === 'win' ? '승리했습니다!' : outcome === 'loss' ? '패배했습니다' : outcome === 'draw' ? '무승부입니다' : `${(room?.result?.winner ?? 0) + 1}팀이 승리했습니다!`;
   const isHost = room?.hostId === identity;
   const current = room?.players.find(p => p.seat === room.currentSeat);
+  const inMatch = Boolean(room && ['rps', 'playing'].includes(room.phase) && me?.seat != null);
   const myTurn = room?.phase === 'playing' && me?.seat !== null && me?.seat === room.currentSeat && connected;
   const seconds = Math.max(0, Math.ceil(((room?.deadline ?? 0) - now - offset.current) / 1000));
   const timeRatio = room?.deadline ? Math.max(0, Math.min(1, (room.deadline - now - offset.current) / ((room.phase === 'rps' ? 10 : room.turnSeconds) * 1000))) : 0;
@@ -293,7 +298,7 @@ export default function App() {
   const turnOrder = room?.blackTeam === 1 ? (room.mode === '2v2' ? [1, 0, 3, 2] : [1, 0]) : room?.mode === '2v2' ? [0, 1, 2, 3] : [0, 1];
 
   if (!entered) return <div className="welcome-page">
-    <header className="welcome-header"><Brand /><div className="welcome-header-actions"><span className="quiet">한 수, 그리고 우리 사이.</span><ThemeToggle theme={theme} onToggle={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} /></div></header>
+    <header className="welcome-header"><div className="header-left"><SiteHome /><Brand /></div><div className="welcome-header-actions"><span className="quiet">한 수, 그리고 우리 사이.</span><ThemeToggle theme={theme} onToggle={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} /></div></header>
     <main className="welcome-main">
       <section className="welcome-copy"><span className="eyebrow"><span className="live-dot" /> 함께 두는 온라인 오목</span><h1>좋은 한 수는,<br />함께할 때 <em>시작돼요.</em></h1><p>친구와 마주 앉아 한 판.<br />둘이서, 또는 넷이서. 돌 하나에 마음을 담아보세요.</p>
         <div className="nickname-form auth-form auth-status" role="status" aria-live="polite">{authError ? <><p className="auth-error" role="alert">{authError}</p><button className="primary auth-submit" type="button" onClick={() => void checkSession()}>다시 시도 <ArrowRight size={18} /></button><button className="secondary auth-submit" type="button" onClick={homeLogin}>홈페이지에서 로그인</button></> : <p className="quiet">홈페이지 로그인 정보를 확인하고 있어요…</p>}</div>
@@ -304,7 +309,7 @@ export default function App() {
   </div>;
 
   return <div className="app">
-    <header className="app-header"><Brand small onHome={() => void goHome()} /><div className="header-right"><ThemeToggle theme={theme} onToggle={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} /><button className="history-button" aria-label={historyOpen ? "게임으로 돌아가기" : `대국 기록 ${records.length}개 보기`} onClick={() => setHistoryOpen(!historyOpen)}><span className="history-long">{historyOpen ? "게임으로" : `대국 기록 (${records.length})`}</span><span className="history-short">{historyOpen ? "게임" : "기록"}</span></button><span className={`connection ${connected ? '' : 'offline'}`}><span className="live-dot" />{connected ? '실시간 연결' : '재연결 중'}</span><span className="profile-avatar">{nickname.slice(0, 1)}</span><span className="profile-name">{nickname}</span><button className="logout-button" onClick={() => void logout()}><LogOut size={15} /> 로그아웃</button></div></header>
+    <header className="app-header"><div className="header-left"><SiteHome onLeave={() => { if (!inMatch) return false; setConfirm('site'); return true; }} /><Brand small onHome={() => void goHome()} /></div><div className="header-right"><ThemeToggle theme={theme} onToggle={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} /><button className="history-button" aria-label={historyOpen ? "게임으로 돌아가기" : `대국 기록 ${records.length}개 보기`} onClick={() => setHistoryOpen(!historyOpen)}><span className="history-long">{historyOpen ? "게임으로" : `대국 기록 (${records.length})`}</span><span className="history-short">{historyOpen ? "게임" : "기록"}</span></button><span className={`connection ${connected ? '' : 'offline'}`}><span className="live-dot" />{connected ? '실시간 연결' : '재연결 중'}</span><span className="profile-avatar">{nickname.slice(0, 1)}</span><span className="profile-name">{nickname}</span><button className="logout-button" onClick={() => void logout()}><LogOut size={15} /> 로그아웃</button></div></header>
     {!connected && <div className="connection-banner">연결을 다시 시도하고 있습니다. 20초 안에 재연결하면 기존 자리로 돌아옵니다. 대국 시간은 계속 흐릅니다.</div>}
     {historyOpen ? <HistoryPage records={records} onBack={() => setHistoryOpen(false)} /> : !room ? <main className="lobby-page">
       <div className="page-intro"><div><span className="eyebrow">THE LOBBY</span><h1>오늘은 누구와 둘까요?</h1><p>새로운 방을 만들거나, 친구의 방에 들어가세요.</p></div><button className="primary" onClick={() => setCreating(true)} disabled={!connected}><Plus size={18} /> 방 만들기</button></div>
@@ -344,7 +349,7 @@ export default function App() {
     {kickNotice && <div className="modal-backdrop"><div className="modal kicked-modal"><span className="kicked-icon"><UserMinus size={29} /></span><span className="eyebrow">ROOM NOTICE</span><h2>추방당했습니다</h2><p>{kickNotice}<br />이 방에는 다시 입장할 수 있습니다.</p><button className="primary" onClick={() => setKickNotice('')}>로비 확인</button></div></div>}
     {creating && <div className="modal-backdrop"><form className="modal" onSubmit={async e => { e.preventDefault(); if (await send('create', { name: roomName, mode, rules, turnSeconds, password: roomPassword })) { setCreating(false); setRoomPassword(''); } }}><button className="modal-close" type="button" aria-label="닫기" onClick={() => setCreating(false)}><X size={20} /></button><span className="eyebrow">NEW ROOM</span><h2>우리의 대국을 시작해요</h2><label htmlFor="room-name">방 이름</label><input id="room-name" value={roomName} maxLength={30} onChange={e => setRoomName(e.target.value)} required autoFocus /><label>대국 방식</label><div className="mode-options">{(['1v1', '2v2'] as Mode[]).map(m => <button className={mode === m ? 'selected' : ''} type="button" key={m} onClick={() => setMode(m)}><Users size={22} /><strong>{m === '1v1' ? '1 대 1' : '2 대 2'}</strong><span>{m === '1v1' ? '마주 앉아 한 수씩' : '두 명이 한 팀으로'}</span></button>)}</div><label>오목 규칙</label><div className="rule-options">{(['freestyle', 'renju'] as RuleSet[]).map(r => <button type="button" key={r} aria-pressed={rules === r} className={rules === r ? 'selected' : ''} onClick={() => setRules(r)}><strong>{r === 'renju' ? '렌주 규칙' : '자유 오목'}</strong><span>{r === 'renju' ? '흑 삼삼·사사·장목 금지' : '금수 없이 5개 이상 연결'}</span></button>)}</div><label htmlFor="room-password">방 비밀번호 <span className="optional-label">선택</span></label><div className="password-field room-password-field"><Lock size={17} /><input id="room-password" type="password" minLength={4} maxLength={20} value={roomPassword} onChange={e => setRoomPassword(e.target.value)} autoComplete="new-password" placeholder="비워두면 누구나 입장할 수 있어요" /></div><span className="room-password-hint">설정하면 선수와 관전자 모두 비밀번호를 입력해야 합니다.</span><label htmlFor="turn-seconds">돌 놓는 제한 시간 (초)</label><div className="time-options">{[2, 10, 15, 30, 60, 120].map(t => <button type="button" key={t} className={turnSeconds === t ? "selected" : ""} onClick={() => setTurnSeconds(t)}>{t}초</button>)}</div><input id="turn-seconds" type="number" min={2} max={300} step={1} value={turnSeconds || ""} onChange={e => setTurnSeconds(Number(e.target.value))} required /><p className="quiet">2~300초 · 두 모드 모두 적용 · 시간 초과 시 팀 패배<br />관전자 3명 · 첫 판 가위바위보 10초 · 다음 판부터 흑백 교대</p><button className="primary" disabled={!roomName.trim() || (roomPassword.length > 0 && roomPassword.length < 4) || pending || !connected}>방 만들기 <ArrowRight size={17} /></button></form></div>}
     {kickTarget && <div className="modal-backdrop"><div className="modal confirm-modal"><h2>{kickTarget.nickname}님을 추방할까요?</h2><p>해당 사용자는 로비로 이동합니다. 이후 다시 방에 입장할 수 있습니다.</p><div><button className="secondary" onClick={() => setKickTarget(null)}>취소</button><button className="danger" disabled={pending} onClick={async () => { if (await send('kick', { targetId: kickTarget.id })) setKickTarget(null); }}>추방하기</button></div></div></div>}
-    {confirm && <div className="modal-backdrop"><div className="modal confirm-modal"><h2>{confirm === 'resign' ? '기권하시겠어요?' : confirm === 'home' ? '메인 페이지로 돌아갈까요?' : '방을 나가시겠어요?'}</h2><p>대국 중 기권하거나 퇴장하면 우리 팀이 패배합니다.</p><div><button className="secondary" onClick={() => setConfirm(null)}>계속 플레이</button><button className="danger" disabled={pending} onClick={async () => { if (confirm === 'home') await goHome(); else if (await send(confirm)) setConfirm(null); }}>{confirm === 'resign' ? '기권하기' : confirm === 'home' ? '메인으로 이동' : '나가기'}</button></div></div></div>}
+    {confirm && <div className="modal-backdrop"><div className="modal confirm-modal"><h2>{confirm === 'resign' ? '기권하시겠어요?' : confirm === 'home' ? '메인 페이지로 돌아갈까요?' : confirm === 'site' ? '홈페이지로 나갈까요?' : '방을 나가시겠어요?'}</h2><p>대국 중 기권하거나 퇴장하면 우리 팀이 패배합니다.</p><div><button className="secondary" onClick={() => setConfirm(null)}>계속 플레이</button><button className="danger" disabled={pending} onClick={async () => { if (confirm === 'site') { await goHome(); location.assign(HOME); } else if (confirm === 'home') await goHome(); else if (await send(confirm)) setConfirm(null); }}>{confirm === 'resign' ? '기권하기' : confirm === 'home' ? '메인으로 이동' : confirm === 'site' ? '홈페이지로' : '나가기'}</button></div></div></div>}
   </div>;
 }
 

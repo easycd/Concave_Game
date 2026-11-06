@@ -12,7 +12,7 @@ import { createAudio } from './audio.js';
 import { createFeedback } from './feedback.js';
 const $=id=>document.getElementById(id), canvas=$('game'),ctx=canvas.getContext('2d'),mini=$('minimap'),mc=mini.getContext('2d');
 let token=sessionStorage.getItem('nightfall-token');if(!token){token=crypto.randomUUID();sessionStorage.setItem('nightfall-token',token);}
-const socket=io('/nightfall',{auth:{token},reconnection:true,autoConnect:false});
+const socket=io('/nightfall',{path:new URL('../socket.io',location.href).pathname,auth:{token},reconnection:true,autoConnect:false});
 let state=null,myId=null,keys=new Set(),lastEvents='',lastRoster='',lastResult='',toastTimeout,camera={x:1600,y:1200},W=innerWidth,H=innerHeight,dpr=Math.min(devicePixelRatio,2),previousPositions=new Map(),renderedPositions=new Map(),arrival=performance.now(),guideOpen=false,guideReturnFocus=null,lastTeam='',lastGenerators='',hintRole=null;
 const interactionPreview=createInteractionPreview();let renderAt=0,renderAngle=0,renderView=null;
 const feedback=createFeedback({heart:$('heartbeat'),edge:$('terror-edge'),hitOverlay:$('hit-overlay')});

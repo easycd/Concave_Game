@@ -1,6 +1,8 @@
 import bcrypt from 'bcryptjs';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import pg from 'pg';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { Mode, Team } from '../src/shared.js';
 
 export interface AccountStats {
@@ -34,9 +36,9 @@ const toStats = (row: Record<string, unknown>): AccountStats => {
 const tokenHash = (token: string) => createHash('sha256').update(token).digest('hex');
 
 export class MemoryAccountStore implements AccountStore {
-  private users = new Map<string, AccountStats & { passwordHash: string }>();
-  private sessions = new Map<string, string>();
-  private games = new Set<string>();
+  protected users = new Map<string, AccountStats & { passwordHash: string }>();
+  protected sessions = new Map<string, string>();
+  protected games = new Set<string>();
   async init() {}
   async register(nickname: string, password: string) {
     if ([...this.users.values()].some(user => user.nickname.toLocaleLowerCase('ko-KR') === nickname.toLocaleLowerCase('ko-KR'))) throw new Error('중복된 닉네임입니다.');
@@ -61,6 +63,53 @@ export class MemoryAccountStore implements AccountStore {
     return true;
   }
   async close() {}
+}
+
+/** JSON 파일 하나에 계정·세션·전적을 저장한다. 개인 서버처럼 PostgreSQL 없이 한 대로 돌릴 때 쓴다. */
+export class FileAccountStore extends MemoryAccountStore {
+  private queue: Promise<void> = Promise.resolve();
+  private sessionExpiry = new Map<string, number>();
+  constructor(private file: string) { super(); }
+  async init() {
+    try {
+      const saved = JSON.parse(await readFile(this.file, 'utf8')) as { users?: (AccountStats & { passwordHash: string })[]; sessions?: [string, string, number][]; games?: string[] };
+      for (const user of saved.users ?? []) this.users.set(user.id, user);
+      const now = Date.now();
+      for (const [hash, id, expires] of saved.sessions ?? []) if (expires > now) { this.sessions.set(hash, id); this.sessionExpiry.set(hash, expires); }
+      for (const id of saved.games ?? []) this.games.add(id);
+    } catch (error) { if ((error as { code?: string }).code !== 'ENOENT') throw error; }
+  }
+  private persist() {
+    const job = this.queue.then(async () => {
+      const now = Date.now();
+      for (const [hash, expires] of this.sessionExpiry) if (expires <= now) { this.sessionExpiry.delete(hash); this.sessions.delete(hash); }
+      const data = { users: [...this.users.values()], sessions: [...this.sessions].map(([hash, id]) => [hash, id, this.sessionExpiry.get(hash) ?? now]), games: [...this.games].slice(-5000) };
+      await mkdir(path.dirname(this.file), { recursive: true });
+      const tmp = `${this.file}.${randomBytes(6).toString('hex')}.tmp`;
+      await writeFile(tmp, JSON.stringify(data), { mode: 0o600 });
+      await rename(tmp, this.file);
+    });
+    this.queue = job.catch(error => console.error('계정 파일 저장 실패:', error instanceof Error ? error.message : error));
+    return job;
+  }
+  async register(nickname: string, password: string) { const account = await super.register(nickname, password); await this.persist(); return account; }
+  async createSession(accountId: string) {
+    const token = await super.createSession(accountId);
+    this.sessionExpiry.set(tokenHash(token), Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await this.persist(); return token;
+  }
+  async authenticate(token: string) {
+    const expires = this.sessionExpiry.get(tokenHash(token));
+    if (!expires || expires <= Date.now()) return null;
+    return super.authenticate(token);
+  }
+  async logout(token: string) { await super.logout(token); this.sessionExpiry.delete(tokenHash(token)); await this.persist(); }
+  async recordGame(gameId: string, mode: Mode, winner: Team | null, players: { id: string; team: Team }[]) {
+    const recorded = await super.recordGame(gameId, mode, winner, players);
+    if (recorded) await this.persist();
+    return recorded;
+  }
+  async close() { await this.queue; }
 }
 
 export class PostgresAccountStore implements AccountStore {
@@ -141,4 +190,10 @@ export class PostgresAccountStore implements AccountStore {
   async close() { await this.pool.end(); }
 }
 
-export const createAccountStore = (): AccountStore => process.env.DATABASE_URL ? new PostgresAccountStore(process.env.DATABASE_URL) : new MemoryAccountStore();
+export const createAccountStore = (): AccountStore => {
+  if (process.env.DATABASE_URL) return new PostgresAccountStore(process.env.DATABASE_URL);
+  if (process.env.OMOK_DATA_DIR) return new FileAccountStore(path.resolve(process.env.OMOK_DATA_DIR, 'accounts.json'));
+  return new MemoryAccountStore();
+};
+/** 서버를 다시 켜도 계정이 남는 저장소인지 (NIGHTFALL 이 같은 계정을 쓸지 정할 때 사용) */
+export const persistentAccounts = () => !!(process.env.DATABASE_URL || process.env.OMOK_DATA_DIR);

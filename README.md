@@ -111,6 +111,7 @@ npm run test:deployment
 | `HOST` | `127.0.0.1` | 받을 주소. 기본 `0.0.0.0` |
 | `OMOK_DATA_DIR` | `/var/lib/webgames/omok` | 전적을 이 폴더의 `records.json`에 저장합니다. 없으면 메모리(재시작 때 사라짐) |
 | `HOME_AUTH_URL` | `http://127.0.0.1:8080/api/auth/me` | 로그인 확인용 홈페이지 서버 주소(기본값 그대로면 됨) |
-| `INTERNAL_TOKEN` | (긴 무작위 문자열) | 홈페이지 관리자 페이지가 전적 조회·닉네임 변경·삭제를 부를 때 쓰는 비밀값. 홈페이지와 같은 값. 없으면 내부 API 꺼짐 |
+| `INTERNAL_TOKEN` | (긴 무작위 문자열) | 홈페이지 관리자 페이지가 전적 조회·닉네임 변경·삭제를 부를 때 쓰는 비밀값. 홈페이지와 같은 값. 대국이 끝날 때 홈페이지 플레이 기록(`/api/internal/plays`)에 알릴 때도 씀. 없으면 내부 API · 플레이 기록 꺼짐 |
+| `HOME_PLAYS_URL` | `http://127.0.0.1:8080/api/internal/plays` | (선택) 플레이 기록을 보낼 주소. 비우면 `HOME_AUTH_URL` 에서 만듦 |
 
 내부 API `/omok/internal/users/:id` (GET 전적 · PUT `{nickname}` · DELETE)는 `X-Internal-Token`이 맞고, 터널을 거친 요청(`CF-Connecting-IP`·`X-Forwarded-For`가 있음)이 아닐 때만 열립니다. 아니면 404.

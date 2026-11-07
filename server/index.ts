@@ -9,12 +9,13 @@ import { GameRoom } from './game.js';
 import { edgeOf, NetQuality } from './netQuality.js';
 import { type AccountStats, type ChatMessage, type OnlineUser, type Reply, type RoomInvite, type RoomSummary, type WhisperMessage } from '../src/shared.js';
 import { createAccountStore, type AccountStore } from './accounts.js';
+import { createPlayReporter, type ReportPlay } from './homePlays.js';
 import { createHomeAuth, HomeAuthUnavailable, internalAllowed, readHomeToken, type VerifySession } from './homeAuth.js';
 
 /** 게임을 올릴 주소 경로. 예: BASE_PATH=/omok → https://도메인/omok/ . 없으면 맨 앞(/) */
 export const basePath = (value = process.env.BASE_PATH ?? '/') => `/${value.replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
 
-export function createGameServer(options: { accountStore?: AccountStore; verifySession?: VerifySession; internalToken?: string; allowLegacyAuth?: boolean; tickIntervalMs?: number } = {}) {
+export function createGameServer(options: { accountStore?: AccountStore; verifySession?: VerifySession; internalToken?: string; reportPlay?: ReportPlay; allowLegacyAuth?: boolean; tickIntervalMs?: number } = {}) {
   const base = basePath();
   const app = express();
   const root = express();
@@ -58,6 +59,7 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
   const ready = accounts.init();
   const verifySession = options.verifySession ?? createHomeAuth();
   const internalToken = options.internalToken ?? process.env.INTERNAL_TOKEN ?? '';
+  const reportPlay = options.reportPlay ?? createPlayReporter({ token: internalToken });
   const rooms = new Map<string, GameRoom>();
   const sessions = new Map<string, { nickname: string; stats: AccountStats; room: string | null; socketId: string | null; disconnectedAt: number | null; lastAction: number }>();
   const whispers = new Map<string, { members: [string, string] }>();
@@ -186,6 +188,18 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
       const room = new GameRoom(code, name, data.mode, token, () => Date.now(), data.turnSeconds ?? 30, data.rules ?? 'freestyle', finished => {
         const result = finished.state.result; if (!result) return;
         const players = finished.state.players.filter(player => player.seat !== null).map(player => ({ id: player.id, team: (player.seat! % 2) as 0 | 1 }));
+        const s = finished.state;
+        const color = (team: number) => (s.blackTeam === null ? `${team + 1}팀` : team === s.blackTeam ? '흑' : '백');
+        const label = (team: number) => (s.mode === '1v1' ? color(team) : `${team + 1}팀(${color(team)})`);
+        void reportPlay({
+          game: 'omok', gameId: s.gameId, room: s.name || s.code, mode: s.mode === '2v2' ? '2:2' : '1:1',
+          startedAt: s.startedAt ?? s.finishedAt ?? Date.now(), endedAt: s.finishedAt ?? Date.now(),
+          result: result.winner === null ? '무승부' : `${label(result.winner)} 승리`, reason: result.reason, moves: s.moves.length,
+          players: s.players.filter(p => p.seat !== null).map(p => {
+            const team = (p.seat! % 2) as 0 | 1;
+            return { id: p.id, nickname: p.nickname, team: label(team), result: result.winner === null ? 'draw' : team === result.winner ? 'win' : 'loss' };
+          }),
+        }).catch(() => {});
         void accounts.recordGame(finished.state.gameId, finished.state.mode, result.winner, players).then(async changed => {
           if (!changed) return;
           await Promise.all(players.map(async player => { const stats = await accounts.stats(player.id); const playerSession = sessions.get(player.id); if (stats && playerSession) playerSession.stats = stats; }));

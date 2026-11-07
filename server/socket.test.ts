@@ -165,3 +165,42 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     assert.equal((await send(players[7], 'leave')).ok, true);
   } finally { sockets.forEach(s => s.disconnect()); await server.close(); }
 });
+
+test('a finished match is reported to the homepage play log', async () => {
+  const reports: unknown[] = [];
+  const server = createGameServer({ allowLegacyAuth: true, tickIntervalMs: 10_000, reportPlay: async play => { reports.push(play); } });
+  await server.ready;
+  await new Promise<void>(resolve => server.http.listen(0, '127.0.0.1', resolve));
+  const address = server.http.address(); assert.ok(address && typeof address !== 'string');
+  const url = `http://127.0.0.1:${address.port}`;
+  const ids = [randomUUID(), randomUUID()];
+  const sockets = ids.map((token, i) => client(url, { auth: { token, nickname: `기록${i}` }, forceNew: true }));
+  const send = async (s: Socket, event: string, data = {}): Promise<Reply> => {
+    await new Promise(resolve => setTimeout(resolve, 75));
+    return new Promise((resolve, reject) => s.timeout(2000).emit(event, data, (err: Error | null, r: Reply) => err ? reject(err) : resolve(r)));
+  };
+  try {
+    await Promise.all(sockets.map(s => new Promise<void>((resolve, reject) => { s.once('connect', resolve); s.once('connect_error', reject); })));
+    const created = await send(sockets[0], 'create', { name: '기록 방', mode: '1v1', turnSeconds: 60 }); assert.equal(created.ok, true);
+    assert.equal((await send(sockets[1], 'join', { code: created.code })).ok, true);
+    for (const s of sockets) assert.equal((await send(s, 'ready')).ok, true);
+    assert.equal((await send(sockets[0], 'rps', { gesture: 'rock' })).ok, true);
+    assert.equal((await send(sockets[1], 'rps', { gesture: 'scissors' })).ok, true);       // 1팀(기록0) 흑
+    assert.equal((await send(sockets[0], 'move', { x: 7, y: 7 })).ok, true);
+    assert.equal((await send(sockets[1], 'resign')).ok, true);
+    const deadline = Date.now() + 2000;
+    while (!reports.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(reports.length, 1);
+    const play = reports[0] as { game: string; room: string; mode: string; result: string; moves: number; startedAt: number; endedAt: number; players: { id: string; nickname: string; team: string; result: string }[] };
+    assert.equal(play.game, 'omok');
+    assert.equal(play.room, '기록 방');
+    assert.equal(play.mode, '1:1');
+    assert.equal(play.result, '흑 승리');
+    assert.equal(play.moves, 1);
+    assert.ok(play.endedAt >= play.startedAt);
+    assert.deepEqual(play.players.map(p => [p.id, p.team, p.result]), [[ids[0], '흑', 'win'], [ids[1], '백', 'loss']]);
+  } finally {
+    for (const s of sockets) s.disconnect();
+    await server.close();
+  }
+});

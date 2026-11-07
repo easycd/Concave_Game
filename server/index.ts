@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { Server } from 'socket.io';
 import { GameRoom } from './game.js';
+import { edgeOf, NetQuality } from './netQuality.js';
 import { type AccountStats, type ChatMessage, type OnlineUser, type Reply, type RoomInvite, type RoomSummary, type WhisperMessage } from '../src/shared.js';
 import { createAccountStore, type AccountStore } from './accounts.js';
 import { createHomeAuth, HomeAuthUnavailable, internalAllowed, readHomeToken, type VerifySession } from './homeAuth.js';
@@ -51,7 +52,8 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
     if (typeof origin !== 'string') return true;
     try { return new URL(origin).host === req.headers.host; } catch { return false; }
   };
-  const io = new Server(http, { maxHttpBufferSize: 16_384, path: `${base}socket.io`, allowRequest: (req, done) => done(null, sameSite(req)) });
+  // Ping every 10s and give up after 10s more: a dropped phone connection is noticed in about 20s instead of 45s (the defaults).
+  const io = new Server(http, { maxHttpBufferSize: 16_384, path: `${base}socket.io`, pingInterval: 10_000, pingTimeout: 10_000, allowRequest: (req, done) => done(null, sameSite(req)) });
   const accounts = options.accountStore ?? createAccountStore();
   const ready = accounts.init();
   const verifySession = options.verifySession ?? createHomeAuth();
@@ -138,6 +140,10 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
     const token: string = socket.data.token;
     const existing = sessions.get(token);
     if (existing?.socketId) io.sockets.sockets.get(existing.socketId)?.disconnect(true);
+    // The browser's ping (shown to the player) and move round trips. Not an action: no rate limit, no state change.
+    const net = new NetQuality(socket.data.nickname, edgeOf(socket.handshake.headers['cf-ray']));
+    socket.on('latency', (data: unknown, ack: unknown) => { net.report(data); if (typeof ack === 'function') ack({ ok: true }); });
+    socket.on('disconnect', () => { const line = net.summary(); if (line) console.log(line); });
     const account = socket.data.account as AccountStats | undefined;
     const fallbackStats: AccountStats = { id: token, nickname: socket.data.nickname, wins: 0, losses: 0, draws: 0, games: 0, winRate: 0 };
     const session = existing ?? { nickname: socket.data.nickname, stats: account ?? fallbackStats, room: null, socketId: null, disconnectedAt: null, lastAction: 0 };

@@ -23,7 +23,13 @@ function Brand({ small = false, onHome }: { small?: boolean; onHome?: () => void
 function SiteHome({ onLeave }: { onLeave?: () => boolean }) {
   return <a href={HOME} className="theme-toggle site-home" aria-label="홈페이지로 돌아가기" title="홈페이지로" onClick={e => { if (onLeave?.()) e.preventDefault(); }}><House size={17} /></a>;
 }
-function Stone({ color, small = false }: { color: 'black' | 'white'; small?: boolean }) { return <span className={`stone ${color} ${small ? 'tiny' : ''}`} />; }
+function Stone({ color, small = false, pending = false }: { color: 'black' | 'white'; small?: boolean; pending?: boolean }) { return <span className={`stone ${color} ${small ? 'tiny' : ''} ${pending ? 'pending' : ''}`} />; }
+/** Round trip to the server, measured every 2 seconds. */
+function PingBadge({ ping, connected }: { ping: number | null; connected: boolean }) {
+  const level = !connected || ping === -1 ? 'bad' : ping === null ? 'wait' : ping < 150 ? 'good' : ping < 400 ? 'ok' : 'bad';
+  const text = !connected ? '연결 끊김' : ping === null ? '핑 …' : ping === -1 ? '응답 없음' : `핑 ${ping}ms`;
+  return <span className={`ping-badge ${level}`} role="status" aria-live="off" title="서버까지 갔다 오는 시간(핑). 낮을수록 빨라요. 150ms 아래 좋음 · 400ms 넘으면 느림"><span className="live-dot" />{text}</span>;
+}
 function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }) {
   const dark = theme === 'dark';
   return <button className="theme-toggle" type="button" aria-label={dark ? '라이트 모드로 전환' : '다크 모드로 전환'} aria-pressed={dark} onClick={onToggle}>{dark ? <Sun size={17} /> : <Moon size={17} />}<span>{dark ? '라이트' : '다크'}</span></button>;
@@ -37,6 +43,9 @@ export default function App() {
   const [ranking, setRanking] = useState<AccountStats[]>([]);
   const [entered, setEntered] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [ping, setPing] = useState<number | null>(null);
+  const moveTimes = useRef<number[]>([]);
+  const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
   const [identity, setIdentity] = useState('');
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
@@ -96,6 +105,7 @@ export default function App() {
   }, []);
 
   useEffect(() => { setResultReveal(room?.phase === 'finished'); }, [room?.gameId, room?.phase]);
+  useEffect(() => { setGhost(null); }, [room?.gameId, room?.moves.length, room?.phase]);
 
   async function refreshAccount() {
     try {
@@ -142,7 +152,17 @@ export default function App() {
   useEffect(() => {
     if (!entered) return;
     const s = io({ path: `${BASE}socket.io`, reconnectionDelay: 500, reconnectionDelayMax: 2000 }); socket.current = s;
-    s.on('connect', () => setConnected(true));
+    let missed = 0; let lastPing: number | null = null;
+    const measure = () => {
+      if (!s.connected) return;
+      const started = performance.now(); const moves = moveTimes.current.splice(0, 10);
+      s.timeout(5000).emit('latency', { ping: lastPing, moves }, (err: Error | null) => {
+        if (err) { missed++; lastPing = null; setPing(-1); if (missed >= 2) { missed = 0; s.io.engine?.close(); } return; }
+        missed = 0; lastPing = Math.round(performance.now() - started); setPing(lastPing);
+      });
+    };
+    const pingTimer = setInterval(measure, 2000);
+    s.on('connect', () => { setConnected(true); setPing(null); measure(); });
     // The server was updated while this page stayed open: load the new screen (once per build, so a stubborn cache can't loop).
     let firstBuild: string | null = null;
     s.on('build', (build: string) => {
@@ -184,7 +204,7 @@ export default function App() {
       }
       setRoom(r);
     });
-    return () => { s.disconnect(); socket.current = null; };
+    return () => { clearInterval(pingTimer); s.disconnect(); socket.current = null; };
     // Nickname is fixed for the lifetime of a connection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entered]);
@@ -193,8 +213,10 @@ export default function App() {
     if (!socket.current?.connected) { notice('서버 연결을 기다려주세요.'); return false; }
     if (pending) return false;
     setPending(true);
+    const started = performance.now();
     return new Promise(resolve => socket.current!.timeout(5000).emit(event, data, (err: Error | null, reply: Reply) => {
       setPending(false);
+      if (event === 'move' && !err) { moveTimes.current.push(Math.round(performance.now() - started)); moveTimes.current.splice(0, moveTimes.current.length - 20); }
       if (err) { notice('응답이 늦어지고 있습니다. 화면 상태를 확인해주세요.'); resolve(false); }
       else if (!reply.ok) { notice(reply.error ?? '요청에 실패했습니다.'); resolve(false); }
       else resolve(true);
@@ -317,7 +339,7 @@ export default function App() {
   </div>;
 
   return <div className="app">
-    <header className="app-header"><div className="header-left"><SiteHome onLeave={() => { if (!inMatch) return false; setConfirm('site'); return true; }} /><Brand small onHome={() => void goHome()} /></div><div className="header-right"><ThemeToggle theme={theme} onToggle={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} /><button className="history-button" aria-label={historyOpen ? "게임으로 돌아가기" : `대국 기록 ${records.length}개 보기`} onClick={() => setHistoryOpen(!historyOpen)}><span className="history-long">{historyOpen ? "게임으로" : `대국 기록 (${records.length})`}</span><span className="history-short">{historyOpen ? "게임" : "기록"}</span></button><span className={`connection ${connected ? '' : 'offline'}`}><span className="live-dot" />{connected ? '실시간 연결' : '재연결 중'}</span><span className="profile-avatar">{nickname.slice(0, 1)}</span><span className="profile-name">{nickname}</span><button className="logout-button" onClick={() => void logout()}><LogOut size={15} /> 로그아웃</button></div></header>
+    <header className="app-header"><div className="header-left"><SiteHome onLeave={() => { if (!inMatch) return false; setConfirm('site'); return true; }} /><Brand small onHome={() => void goHome()} /></div><div className="header-right"><ThemeToggle theme={theme} onToggle={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} /><button className="history-button" aria-label={historyOpen ? "게임으로 돌아가기" : `대국 기록 ${records.length}개 보기`} onClick={() => setHistoryOpen(!historyOpen)}><span className="history-long">{historyOpen ? "게임으로" : `대국 기록 (${records.length})`}</span><span className="history-short">{historyOpen ? "게임" : "기록"}</span></button><span className={`connection ${connected ? '' : 'offline'}`}><span className="live-dot" />{connected ? '실시간 연결' : '재연결 중'}</span><PingBadge ping={ping} connected={connected} /><span className="profile-avatar">{nickname.slice(0, 1)}</span><span className="profile-name">{nickname}</span><button className="logout-button" onClick={() => void logout()}><LogOut size={15} /> 로그아웃</button></div></header>
     {!connected && <div className="connection-banner">연결을 다시 시도하고 있습니다. 20초 안에 재연결하면 기존 자리로 돌아옵니다. 대국 시간은 계속 흐릅니다.</div>}
     {historyOpen ? <HistoryPage records={records} onBack={() => setHistoryOpen(false)} /> : !room ? <main className="lobby-page">
       <div className="page-intro"><div><span className="eyebrow">THE LOBBY</span><h1>오늘은 누구와 둘까요?</h1><p>새로운 방을 만들거나, 친구의 방에 들어가세요.</p></div><button className="primary" onClick={() => setCreating(true)} disabled={!connected}><Plus size={18} /> 방 만들기</button></div>
@@ -330,7 +352,7 @@ export default function App() {
       <div className="game-layout">
         <aside className="chat-panel"><div className="chat-heading"><h2><MessageCircle size={17} /> 함께 나누는 대화</h2><span>{room.players.length}</span></div><div className="chat-messages">{room.chat.map(m => m.system ? <div className="system-message" key={m.id}>{m.text}</div> : <div className={`chat-message ${m.nickname === nickname ? 'mine' : ''}`} key={m.id}><div className="chat-meta"><strong>{m.nickname}</strong><time>{new Date(m.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</time></div><div className="chat-bubble">{m.text}</div></div>)}<div ref={chatEnd} /></div><form className="chat-input" onSubmit={sendChat}><input aria-label="채팅 메시지" placeholder="대화를 나눠보세요" maxLength={200} value={chat} onChange={e => setChat(e.target.value)} /><button aria-label="메시지 보내기" disabled={!chat.trim() || !connected}><Send size={18} /></button></form><span className="chat-hint">좋은 한 수만큼, 따뜻한 한마디.</span></aside>
         <section className="board-panel"><div className={`turn-announcement ${myTurn ? "is-mine" : ""}`} role="status">{room.phase === "playing" ? <><span>{room.currentSeat! + 1}번 · {teamOf(room.currentSeat!) + 1}팀</span><strong>{current?.nickname}님의 차례</strong><b>{myTurn ? "내 차례! 돌을 놓아주세요" : "상대 플레이어가 돌을 놓고 있어요"}</b></> : <strong className={room.phase === 'finished' ? `finished-title ${outcome}` : undefined}>{room.phase === 'finished' ? resultTitle : phaseLabel[room.phase]}</strong>}</div><div className="board-status"><div><span className={`status-dot ${myTurn ? 'green' : ''}`} /><strong>{room.phase === 'lobby' ? '플레이어를 기다리고 있어요' : room.phase === 'rps' ? '흑돌을 정하고 있어요' : room.phase === 'finished' ? '대국이 끝났어요' : myTurn ? '당신의 차례예요' : `${current?.nickname ?? '상대'}님의 차례`}</strong>{room.phase === 'playing' && <Stone color={currentColor} small />}</div><div className={`timer-block ${timeWarning ? 'time-warning' : ''}`}><span className={`timer ${seconds <= 10 && room.phase === 'playing' ? 'urgent' : ''}`}>{room.deadline ? <><span>{seconds.toString().padStart(2, '0')}</span> 초</> : '15 × 15'}</span>{room.deadline && <div className={`time-track ${seconds <= 10 && room.phase === 'playing' ? 'urgent' : ''}`} role="progressbar" aria-label="남은 제한 시간" aria-valuemin={0} aria-valuemax={room.phase === 'rps' ? 10 : room.turnSeconds} aria-valuenow={seconds}><div style={{ transform: `scaleX(${timeRatio})` }} /></div>}</div></div>
-          <div className={`board-wrap ${myTurn ? 'my-turn' : ''} ${room.phase === 'playing' && timeWarning ? 'board-time-warning' : ''}`}><img className="board-image" src={`${BASE}board.png`} alt="15 × 15 오목판" draggable={false} /><div className="board-grid" role="grid" aria-label="오목판" onPointerMove={e => { const rect = e.currentTarget.getBoundingClientRect(); setHover([Math.max(0, Math.min(14, Math.floor((e.clientX - rect.left) / rect.width * 15))), Math.max(0, Math.min(14, Math.floor((e.clientY - rect.top) / rect.height * 15)))]); }} onPointerLeave={() => setHover(null)}>{room.board.flatMap((row, y) => row.map((cell, x) => { const forbidden = room.forbiddenMoves?.find(p => p.x === x && p.y === y); const last = room.moves.at(-1); const winning = room.winningLine.some(([wx, wy]) => wx === x && wy === y); return <button key={`${x}-${y}`} role="gridcell" aria-label={`${String.fromCharCode(65 + x)}${15 - y}${cell ? cell === 1 ? ' 흑돌' : ' 백돌' : ' 빈자리'}${forbidden ? ` 금수 ${forbidden.reason}` : ''}`} title={forbidden ? `렌주 금수: ${forbidden.reason}` : undefined} className={`board-cell ${winning ? 'winning' : ''}`} disabled={!myTurn || !!cell || !!forbidden || pending} onClick={() => void send('move', { x, y })}>{cell ? <><Stone color={cell === 1 ? 'black' : 'white'} />{last?.x === x && last?.y === y && <span className="last-marker" />}</> : forbidden ? <span className="forbidden-marker" aria-hidden="true">×</span> : myTurn && hover?.[0] === x && hover?.[1] === y ? <span className="preview-stone"><Stone color={currentColor} /></span> : null}</button>; }))}</div>
+          <div className={`board-wrap ${myTurn ? 'my-turn' : ''} ${room.phase === 'playing' && timeWarning ? 'board-time-warning' : ''}`}><img className="board-image" src={`${BASE}board.png`} alt="15 × 15 오목판" draggable={false} /><div className="board-grid" role="grid" aria-label="오목판" onPointerMove={e => { const rect = e.currentTarget.getBoundingClientRect(); const hx = Math.max(0, Math.min(14, Math.floor((e.clientX - rect.left) / rect.width * 15))); const hy = Math.max(0, Math.min(14, Math.floor((e.clientY - rect.top) / rect.height * 15))); setHover(previous => previous?.[0] === hx && previous?.[1] === hy ? previous : [hx, hy]); }} onPointerLeave={() => setHover(null)}>{room.board.flatMap((row, y) => row.map((cell, x) => { const forbidden = room.forbiddenMoves?.find(p => p.x === x && p.y === y); const last = room.moves.at(-1); const winning = room.winningLine.some(([wx, wy]) => wx === x && wy === y); return <button key={`${x}-${y}`} role="gridcell" aria-label={`${String.fromCharCode(65 + x)}${15 - y}${cell ? cell === 1 ? ' 흑돌' : ' 백돌' : ' 빈자리'}${forbidden ? ` 금수 ${forbidden.reason}` : ''}`} title={forbidden ? `렌주 금수: ${forbidden.reason}` : undefined} className={`board-cell ${winning ? 'winning' : ''}`} disabled={!myTurn || !!cell || !!forbidden || pending} onClick={() => { setGhost({ x, y }); void send('move', { x, y }).then(ok => { if (!ok) setGhost(null); }); }}>{ghost?.x === x && ghost?.y === y && !cell ? <Stone color={currentColor} pending /> : cell ? <><Stone color={cell === 1 ? 'black' : 'white'} />{last?.x === x && last?.y === y && <span className="last-marker" />}</> : forbidden ? <span className="forbidden-marker" aria-hidden="true">×</span> : myTurn && hover?.[0] === x && hover?.[1] === y ? <span className="preview-stone"><Stone color={currentColor} /></span> : null}</button>; }))}</div>
           {room.phase === 'playing' && room.rpsResult && rpsReveal && <div className="rps-result-banner" role="status"><button aria-label="가위바위보 결과 닫기" onClick={() => setRpsReveal(false)}><X size={16} /></button><span>가위바위보 결과</span><h2>{room.rpsResult.winner + 1}팀 승리!</h2><div className="rps-result-choices">{room.rpsResult.choices.map((choice, team) => <div key={team}><strong>{team + 1}팀 · {room.players.find(p => p.seat === team)?.nickname}</strong><span>{gestures.find(g => g.value === choice)?.symbol ?? '⌛'} {gestures.find(g => g.value === choice)?.label ?? '미선택'}</span></div>)}</div><p><b>{room.rpsResult.winner + 1}팀이 흑돌</b>로 선공 · {2 - room.rpsResult.winner}팀은 백돌로 후공</p></div>}
           {room.phase === 'lobby' && <div className="board-overlay"><div className="waiting-card"><span className="waiting-stones"><Stone color="black" /><Stone color="white" /></span><h2>한 판, 함께 준비해요</h2><p>오른쪽에서 팀과 자리를 선택하고<br />준비 완료 버튼을 눌러주세요.{room.blackTeam !== null && <><br />흑백 교대 · 가위바위보 없이 시작합니다.</>}</p><div className="waiting-progress">{activePlayers.filter(p => p.ready).length}<span> / {room.mode === '1v1' ? 2 : 4}명 준비 완료</span></div></div></div>}
           {room.phase === 'rps' && <div className="board-overlay"><div className="rps-card"><span className="eyebrow">FIRST MOVE</span><h2>가위, 바위, 보!</h2><p className={room.rpsRetryReason ? "rps-retry-notice" : undefined} role={room.rpsRetryReason ? "status" : undefined}>{room.rpsRetryReason === 'tie' ? '무승부입니다! 다시 선택해주세요.' : room.rpsRetryReason === 'missing' ? '두 팀 모두 미선택! 다시 선택해주세요.' : '이긴 팀이 흑돌로 먼저 시작해요.'}</p><div className="rps-count">{seconds}</div><div className="rps-choices">{gestures.map(g => <button key={g.value} disabled={!connected || pending || (me?.seat !== 0 && me?.seat !== 1) || room.rpsSelected[me?.seat ?? 0]} onClick={() => void send('rps', { gesture: g.value })}><span>{g.symbol}</span>{g.label}</button>)}</div><div className="rps-team-status">{[0, 1].map(t => <span key={t}>{t + 1}팀 {room.rpsSelected[t] ? '선택 완료 ✓' : '선택 중…'}</span>)}</div><span className="quiet">{me?.seat !== 0 && me?.seat !== 1 ? '팀의 첫 번째 플레이어가 선택합니다.' : '선택은 상대에게 공개되지 않아요.'}</span><span className="rps-round">ROUND {room.rpsRound}</span></div></div>}

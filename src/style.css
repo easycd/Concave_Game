@@ -228,3 +228,21 @@
 :root[data-theme="dark"] .ping-badge{background:#1f2a24;color:#9fc7a8}:root[data-theme="dark"] .ping-badge.wait{background:#24262a;color:#a3a7af}:root[data-theme="dark"] .ping-badge.ok{background:#332b19;color:#e2bd72}:root[data-theme="dark"] .ping-badge.bad{background:#3a1f1c;color:#f0998e}
 @media(max-width:650px){.ping-badge{margin-right:4px;padding:3px 7px;font-size:10px;gap:4px}}
 .stone.pending{opacity:.62}
+
+/* Phones (2026-11 mobile audit): bigger board, tap-to-aim hint, compact lobby panel, 16px inputs (iOS zooms smaller ones), readable small text */
+.preview-stone.aimed>.stone{opacity:.75;outline:2px solid #e2b43c;outline-offset:1px;border-radius:50%}
+.aim-hint{margin:8px 0 0;padding:9px 12px;border-radius:9px;background:#eef3ec;color:#3f6552;font-size:13px;font-weight:600;text-align:center}.aim-hint.armed{background:#fbefcf;color:#7a5a12}
+:root[data-theme="dark"] .aim-hint{background:#1f2a24;color:#9fc7a8}:root[data-theme="dark"] .aim-hint.armed{background:#332b19;color:#e2bd72}
+@media(max-width:650px){
+.board-panel .board-wrap{width:calc(100% + 24px);max-width:none;margin-left:-12px;border-radius:4px}
+input,select,textarea{font-size:16px!important}
+.room-lobby-directory.minimized{left:auto;right:10px;width:auto;height:48px;border-radius:24px}.room-lobby-directory.minimized .room-directory-heading{min-height:48px;padding:6px 14px;border-radius:24px;gap:8px}.room-lobby-directory.minimized .room-directory-heading small{display:none}.room-lobby-directory.minimized .room-directory-heading strong{font-size:13px}
+.theme-toggle,.history-button,.logout-button,.profile-avatar{min-width:40px;min-height:40px}
+.back-button{min-height:40px;font-size:12px}
+.player-seat small,.player-seat span,.team-color,.seat-dot,.me-tag,.spectator-empty,.board-footer,.board-footer span,.room-share .invite-button,.mode-tag,.quiet{font-size:11px}
+.replay-controls button{min-height:44px}input[type=range]{min-height:32px}
+}
+@media(max-width:650px){
+.game-page .mode-tag,.game-page .timer,.game-page .turn-announcement span,.game-page .turn-announcement b,.game-page .player-detail span,.game-page .player-detail strong,.game-page .room-notes p,.game-page .room-notes span,.game-page .room-share span,.game-page .room-share strong,.game-page .board-footer span,.game-page .quiet,.game-page small,.game-page .turn-sequence span,.game-page .team-color,.game-page .me-tag,.game-page .seat-dot,.history-page p,.history-page time,.history-page .eyebrow,.app-header .ping-badge,.app-header .history-short{font-size:11px!important}
+.game-page{padding-bottom:72px}
+}

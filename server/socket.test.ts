@@ -79,6 +79,10 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     const burst = await Promise.all(Array.from({ length: 20 }, (_, i) => new Promise<Reply>(resolve => players[4].emit('chat', { text: `연속채팅${i}` }, resolve))));
     assert.ok(burst.every(r => r.ok));
     await waitFor(() => views.get(0)?.chat.at(-1)?.text === '연속채팅19');
+    // a flood is cut off: the chat bucket (30) runs dry, and the extra lines never reach the room
+    const flood = await Promise.all(Array.from({ length: 20 }, (_, i) => new Promise<Reply>(resolve => players[4].emit('chat', { text: `도배${i}` }, resolve))));
+    assert.ok(flood.some(r => !r.ok));
+    assert.match(flood.find(r => !r.ok)!.error!, /너무 빨리/);
     const simultaneous = await Promise.all([
       new Promise<Reply>(resolve => players[0].emit('chat', { text: '돌 놓으며 채팅' }, resolve)),
       new Promise<Reply>(resolve => players[0].emit('move', { x: 8, y: 8 }, resolve)),
@@ -136,6 +140,10 @@ test('real sockets synchronize 2v2 play, chat, spectators and reconnect', async 
     assert.equal((await send(players[6], 'whisperClose', { targetId: tokens[7] })).ok, true);
     await waitFor(() => whisperClosures.get(7) === '테스트6');
     assert.equal((await send(players[6], 'join', { code: protectedRoom.code, password: '4321' })).ok, true);
+    // guessing a room password: after 5 wrong tries even the right one is refused for a minute
+    for (let i = 0; i < 5; i++) assert.equal((await send(players[5], 'join', { code: protectedRoom.code, password: `guess${i}` })).ok, false);
+    const guessed = await send(players[5], 'join', { code: protectedRoom.code, password: '4321' });
+    assert.equal(guessed.ok, false); assert.match(guessed.error!, /너무 많이 틀렸어요/);
     assert.equal((await send(players[7], 'kick', { targetId: tokens[6] })).ok, true);
     await waitFor(() => kicks.get(6) === '비밀 초대방' && views.get(6) === null);
     assert.equal((await send(players[6], 'join', { code: protectedRoom.code, password: '4321' })).ok, true);

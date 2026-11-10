@@ -81,6 +81,26 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
     }
     directory();
   };
+  // Per member (kept apart from the session, so reconnecting does not reset them):
+  //   chat: a bucket of CHAT_BURST messages, refilled CHAT_REFILL_MS each; a quick burst is fine, a flood stops.
+  //   room password: PASSWORD_TRIES wrong guesses per PASSWORD_WINDOW_MS, so a 4-character password cannot be guessed by trying them all.
+  const CHAT_BURST = 30, CHAT_REFILL_MS = 500, PASSWORD_TRIES = 5, PASSWORD_WINDOW_MS = 60_000;
+  const chatBuckets = new Map<string, { tokens: number; at: number }>();
+  const passwordFails = new Map<string, { count: number; until: number }>();
+  const takeChat = (id: string) => {
+    const now = Date.now();
+    const bucket = chatBuckets.get(id) ?? { tokens: CHAT_BURST, at: now };
+    bucket.tokens = Math.min(CHAT_BURST, bucket.tokens + (now - bucket.at) / CHAT_REFILL_MS); bucket.at = now;
+    chatBuckets.set(id, bucket);
+    if (bucket.tokens < 1) throw new Error('채팅을 너무 빨리 보내고 있어요. 잠시 후 다시 보내주세요.');
+    bucket.tokens -= 1;
+  };
+  const passwordBlocked = (id: string) => { const f = passwordFails.get(id); return Boolean(f && f.until > Date.now() && f.count >= PASSWORD_TRIES); };
+  const passwordFailed = (id: string) => {
+    const now = Date.now(); let f = passwordFails.get(id);
+    if (!f || f.until <= now) { f = { count: 0, until: now + PASSWORD_WINDOW_MS }; passwordFails.set(id, f); }
+    f.count++;
+  };
   const whisperKey = (a: string, b: string) => [a, b].sort().join(':');
   const closeWhispers = (id: string) => {
     for (const [key, channel] of whispers) {
@@ -172,7 +192,8 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
       const reply = typeof ack === 'function' ? ack as (r: Reply) => void : () => {};
       try {
         if (session.socketId !== socket.id) throw new Error('다른 창에서 연결되었습니다.');
-        if (!['chat', 'lobbyChat', 'whisperMessage', 'leave'].includes(event)) {
+        if (['chat', 'lobbyChat', 'whisperMessage'].includes(event)) takeChat(token);
+        else if (event !== 'leave') {
           if (Date.now() - session.lastAction < 60) throw new Error('잠시 후 다시 시도해주세요.');
           session.lastAction = Date.now();
         }
@@ -213,7 +234,11 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
       if (session.room) throw new Error('현재 방에서 먼저 나가주세요.');
       const code = cleanText(data?.code, 6).toUpperCase(); const room = rooms.get(code);
       if (!room) throw new Error('방 코드를 확인해주세요.');
-      if (!room.acceptsPassword(data?.password)) throw new Error(data?.password ? '방 비밀번호가 다릅니다.' : '비밀번호가 필요한 방입니다.');
+      if (room.state.locked && passwordBlocked(token)) throw new Error('방 비밀번호를 너무 많이 틀렸어요. 1분 뒤 다시 시도해주세요.');
+      if (!room.acceptsPassword(data?.password)) {
+        if (data?.password) passwordFailed(token);
+        throw new Error(data?.password ? '방 비밀번호가 다릅니다.' : '비밀번호가 필요한 방입니다.');
+      }
       room.add(token, session.nickname, data.spectator === true); session.room = code; socket.join(code); broadcast(room); return { ok: true, code };
     });
     action('leave', leave);
@@ -307,6 +332,9 @@ export function createGameServer(options: { accountStore?: AccountStore; verifyS
       }
       if (!session.socketId && !session.room && session.disconnectedAt && Date.now() - session.disconnectedAt > 60_000) sessions.delete(id);
     }
+    const now = Date.now();
+    for (const [id, bucket] of chatBuckets) if (now - bucket.at > CHAT_BURST * CHAT_REFILL_MS) chatBuckets.delete(id);
+    for (const [id, f] of passwordFails) if (f.until <= now) passwordFails.delete(id);
   }, options.tickIntervalMs ?? 100);
   interval.unref();
   // Signed out or deleted on the homepage → drop the live connection too.
